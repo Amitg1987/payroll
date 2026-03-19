@@ -6,11 +6,16 @@ import com.embeddedpayroll.backend.repository.EmployeeRepository;
 import com.embeddedpayroll.backend.repository.UserAccountRepository;
 import com.embeddedpayroll.backend.service.PayrollService;
 import com.embeddedpayroll.backend.service.TaxEngineService;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpStatus;
+import org.springframework.boot.test.web.server.LocalServerPort;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,8 +34,8 @@ class EmbeddedPayrollBackendApplicationTests {
 	@Autowired
 	private TaxEngineService taxEngineService;
 
-	@Autowired
-	private TestRestTemplate restTemplate;
+	@LocalServerPort
+	private int port;
 
 	@Test
 	void contextLoads() {
@@ -64,21 +69,42 @@ class EmbeddedPayrollBackendApplicationTests {
 	}
 
 	@Test
-	void partnerVersionedEmployeeEndpointIsAvailable() {
+	void partnerVersionedEmployeeEndpointIsAvailable() throws Exception {
 		Employee employee = employeeRepository.findByEmployeeNumber("EMP-1001").orElseThrow();
-		var response = restTemplate.withBasicAuth("admin", "Admin@123")
-			.getForEntity("/api/v1/employees?organizationId=" + employee.getOrganization().getId(), String.class);
+		String response = get(
+			"/api/v1/employees?organizationId=" + employee.getOrganization().getId(),
+			"admin",
+			"Admin@123"
+		);
 
-		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-		assertThat(response.getBody()).contains("EMP-1001");
+		assertThat(response).contains("EMP-1001");
 	}
 
 	@Test
-	void partnerOpenApiGroupIsPublished() {
-		var response = restTemplate.getForEntity("/v3/api-docs/partner-v1", String.class);
+	void partnerOpenApiGroupIsPublished() throws Exception {
+		String response = get("/v3/api-docs/partner-v1", null, null);
 
-		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-		assertThat(response.getBody()).contains("/api/v1/employees");
+		assertThat(response).contains("/api/v1/employees");
+	}
+
+	private String get(String path, String username, String password) throws Exception {
+		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+			.uri(URI.create("http://localhost:" + port + path))
+			.GET();
+
+		if (username != null && password != null) {
+			String encodedCredentials = Base64.getEncoder().encodeToString(
+				(username + ":" + password).getBytes(StandardCharsets.UTF_8)
+			);
+			requestBuilder.header("Authorization", "Basic " + encodedCredentials);
+		}
+
+		HttpResponse<String> response = HttpClient.newHttpClient().send(
+			requestBuilder.build(),
+			HttpResponse.BodyHandlers.ofString()
+		);
+		assertThat(response.statusCode()).isEqualTo(200);
+		return response.body();
 	}
 
 }
