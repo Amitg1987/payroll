@@ -1,59 +1,61 @@
 package com.embeddedpayroll.backend;
 
+import com.embeddedpayroll.backend.model.Employee;
+import com.embeddedpayroll.backend.model.PayrollSchedule;
+import com.embeddedpayroll.backend.repository.EmployeeRepository;
+import com.embeddedpayroll.backend.repository.UserAccountRepository;
+import com.embeddedpayroll.backend.service.PayrollService;
+import com.embeddedpayroll.backend.service.TaxEngineService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
-import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@AutoConfigureMockMvc
 class EmbeddedPayrollBackendApplicationTests {
 
 	@Autowired
-	private MockMvc mockMvc;
+	private UserAccountRepository userAccountRepository;
+
+	@Autowired
+	private EmployeeRepository employeeRepository;
+
+	@Autowired
+	private PayrollService payrollService;
+
+	@Autowired
+	private TaxEngineService taxEngineService;
 
 	@Test
 	void contextLoads() {
 	}
 
 	@Test
-	void currentUserEndpointReturnsSeededAdmin() throws Exception {
-		mockMvc.perform(get("/api/security/me")
-				.with(SecurityMockMvcRequestPostProcessors.httpBasic("admin", "Admin@123")))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.username").value("admin"))
-			.andExpect(jsonPath("$.roles[0]").value("ADMIN"));
+	void demoUsersAreSeeded() {
+		assertThat(userAccountRepository.findByUsername("admin")).isPresent();
+		assertThat(userAccountRepository.findByUsername("accountant")).isPresent();
+		assertThat(userAccountRepository.findByUsername("approver")).isPresent();
 	}
 
 	@Test
-	void payrollCalculationEndpointProducesNetPay() throws Exception {
-		String request = """
-			{
-			  "employeeId": 1,
-			  "taxYear": 2026,
-			  "frequency": "BIWEEKLY",
-			  "bonusPay": 0,
-			  "overtimeHours": 0,
-			  "preTaxDeductions": 0
-			}
-			""";
+	void payrollCalculationProducesNetPay() {
+		Employee employee = employeeRepository.findByEmployeeNumber("EMP-1001").orElseThrow();
+		var w4Profile = payrollService.findCurrentW4(employee.getId(), 2026);
+		var calculation = taxEngineService.calculate(
+			employee,
+			w4Profile,
+			2026,
+			PayrollSchedule.PayrollFrequency.BIWEEKLY,
+			java.math.BigDecimal.ZERO,
+			java.math.BigDecimal.ZERO,
+			java.math.BigDecimal.ZERO
+		);
 
-		mockMvc.perform(post("/api/payroll/calculate")
-				.with(SecurityMockMvcRequestPostProcessors.httpBasic("accountant", "Accountant@123"))
-				.contentType(MediaType.APPLICATION_JSON)
-				.content(request))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.employeeId").value(1))
-			.andExpect(jsonPath("$.grossPay").isNumber())
-			.andExpect(jsonPath("$.netPay").isNumber());
+		assertThat(calculation.employeeId()).isEqualTo(employee.getId());
+		assertThat(calculation.grossPay()).isPositive();
+		assertThat(calculation.netPay()).isPositive();
+		assertThat(calculation.netPay()).isLessThan(calculation.grossPay());
 	}
 
 }

@@ -17,9 +17,6 @@ spring:
     console:
       enabled: true
       path: /h2-console
-  jackson:
-    serialization:
-      write-dates-as-timestamps: false
 
 server:
   port: 8080

@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +25,7 @@ public class TaxEngineService {
     private final TaxYearProfileRepository taxYearProfileRepository;
     private final PayrollRunItemRepository payrollRunItemRepository;
 
+    @Transactional(readOnly = true)
     public PayrollComputation calculate(
         Employee employee,
         EmployeeW4Profile w4Profile,
@@ -155,9 +157,10 @@ public class TaxEngineService {
             .subtract(standardDeduction)
             .subtract(nz(w4Profile.getDeductions()));
         annualizedTaxable = max(annualizedTaxable, BigDecimal.ZERO);
+        BigDecimal taxableAnnualIncome = annualizedTaxable;
 
         BigDecimal annualFederalTax = federalTaxBrackets(taxYearProfile, w4Profile.getFilingStatus()).stream()
-            .map(bracket -> taxForBracket(annualizedTaxable, bracket))
+            .map(bracket -> taxForBracket(taxableAnnualIncome, bracket))
             .reduce(BigDecimal.ZERO, BigDecimal::add)
             .subtract(nz(w4Profile.getDependentsCredit()));
 
