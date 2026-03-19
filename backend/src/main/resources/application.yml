@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: embedded-payroll-backend
+  datasource:
+    url: jdbc:h2:mem:embeddedpayroll;MODE=PostgreSQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8080
+
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://127.0.0.1:5173
+  temporal:
+    enabled: false
+    namespace: default
+    target: 127.0.0.1:7233
+    task-queue: embedded-payroll-tax-filings
+  webhooks:
+    dispatch-enabled: true
+    dispatch-interval-ms: 60000

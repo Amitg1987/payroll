@@ -1,0 +1,463 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #dce7f6;
+  background:
+    radial-gradient(circle at top, #17325f 0, #0f172a 45%, #08101d 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 0.9rem;
+  padding: 0.8rem 1.15rem;
+  font-weight: 700;
+  color: #07111e;
+  background: linear-gradient(135deg, #7dd3fc, #38bdf8);
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+}
+
+.button-secondary {
+  color: #dce7f6;
+  background: rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  color: #dce7f6;
+}
+
+input,
+select {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.9rem;
+  padding: 0.8rem 0.95rem;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.78);
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline-offset: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 0.95rem 0.85rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+#root {
+  width: 100%;
+}
+
+.app-shell {
+  width: min(1400px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 3rem;
+}
+
+.hero-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.8fr);
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.hero-panel,
+.section-card,
+.stat-card,
+.schedule-card,
+.run-card,
+.message {
+  backdrop-filter: blur(18px);
+  background: rgba(8, 16, 29, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 1.25rem;
+  box-shadow: 0 18px 60px rgba(2, 8, 23, 0.35);
+}
+
+.hero-shell h1 {
+  margin: 0.4rem 0 0.9rem;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1.05;
+}
+
+.hero-copy {
+  max-width: 62rem;
+  font-size: 1.02rem;
+  color: #cbd5e1;
+}
+
+.hero-panel {
+  padding: 1.5rem;
+  display: grid;
+  gap: 0.65rem;
+  align-content: start;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #7dd3fc;
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+.stats-grid,
+.page-grid {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.page-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stat-card {
+  padding: 1.3rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.stat-card strong {
+  font-size: 1.45rem;
+}
+
+.section-card {
+  padding: 1.4rem;
+}
+
+.section-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.section-card__header h2,
+.run-card h3,
+.schedule-card h3,
+.tax-year-summary h3 {
+  margin: 0.2rem 0 0.35rem;
+}
+
+.section-card__body {
+  display: grid;
+  gap: 1rem;
+}
+
+.connection-panel,
+.form-stack,
+.filing-layout,
+.calculator-grid,
+.tax-year-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.connection-panel__actions,
+.calculator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.field-grid--compact {
+  grid-template-columns: 1.3fr 1fr 1fr 1.2fr;
+}
+
+.message {
+  padding: 0.95rem 1rem;
+}
+
+.message--error {
+  border-color: rgba(248, 113, 113, 0.34);
+  color: #fecaca;
+}
+
+.message--success {
+  border-color: rgba(74, 222, 128, 0.32);
+  color: #bbf7d0;
+}
+
+.table-shell {
+  overflow-x: auto;
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.table-meta {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.empty-state {
+  color: #94a3b8;
+  text-align: center;
+  padding: 1.4rem 0;
+}
+
+.schedule-list,
+.run-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.schedule-card,
+.run-card {
+  padding: 1rem;
+}
+
+.schedule-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.run-card__header,
+.run-card__status {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.run-card__header {
+  margin-bottom: 0.9rem;
+}
+
+.run-card__status {
+  align-items: center;
+}
+
+.run-card__totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.run-card__totals div,
+.result-tile,
+.tax-year-summary {
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.run-card__totals span,
+.result-tile span,
+.metric-list span {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.86rem;
+}
+
+.pill,
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pill {
+  background: rgba(148, 163, 184, 0.14);
+  color: #e2e8f0;
+}
+
+.pill--pending_approval {
+  background: rgba(250, 204, 21, 0.16);
+  color: #fde68a;
+}
+
+.pill--approved {
+  background: rgba(74, 222, 128, 0.16);
+  color: #bbf7d0;
+}
+
+.role-badge--admin {
+  background: rgba(125, 211, 252, 0.16);
+  color: #bae6fd;
+}
+
+.role-badge--accountant {
+  background: rgba(129, 140, 248, 0.16);
+  color: #c7d2fe;
+}
+
+.role-badge--approver {
+  background: rgba(167, 139, 250, 0.16);
+  color: #ddd6fe;
+}
+
+.role-badge--developer_platform_integrator {
+  background: rgba(244, 114, 182, 0.16);
+  color: #fbcfe8;
+}
+
+.role-badge--partner_api {
+  background: rgba(74, 222, 128, 0.16);
+  color: #bbf7d0;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.result-tile strong {
+  font-size: 1.4rem;
+}
+
+.result-tile--highlight {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.result-breakdown {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.result-breakdown p {
+  margin: 0;
+  padding: 0.9rem;
+  border-radius: 0.95rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.tax-year-selector {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.tax-year-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tax-year-grid__table {
+  grid-column: 1 / -1;
+}
+
+.metric-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.metric-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .stats-grid,
+  .page-grid,
+  .hero-shell,
+  .field-grid,
+  .field-grid--compact,
+  .result-grid,
+  .result-breakdown,
+  .tax-year-grid,
+  .run-card__totals {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-card,
+  .run-card__header,
+  .connection-panel__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
