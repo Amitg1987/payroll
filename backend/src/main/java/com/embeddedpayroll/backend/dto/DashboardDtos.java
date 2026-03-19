@@ -12,9 +12,13 @@ public final class DashboardDtos {
         Long organizationId,
         String organizationName,
         String ein,
+        String primaryJurisdictionCode,
         long employeeCount,
         long pendingApprovalRuns,
         long pendingFilings,
+        long jurisdictionRegistrations,
+        long partnerApiClients,
+        long pendingWebhookDeliveries,
         LocalDate nextPayDate,
         List<Integer> supportedTaxYears
     ) {

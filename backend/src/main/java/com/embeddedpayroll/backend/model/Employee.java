@@ -54,11 +54,24 @@ public class Employee extends BaseEntity {
     @Column(nullable = false, length = 24)
     private CompensationType compensationType = CompensationType.SALARIED;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 24)
+    private WorkerType workerType = WorkerType.W2_EMPLOYEE;
+
     @Column(length = 80)
     private String department;
 
     @Column(nullable = false, length = 8)
     private String workState;
+
+    @Column(nullable = false, length = 8)
+    private String residenceState;
+
+    @Column(length = 32)
+    private String workLocalJurisdictionCode;
+
+    @Column(length = 32)
+    private String residenceLocalJurisdictionCode;
 
     @Column(precision = 14, scale = 2)
     private BigDecimal annualSalary;
@@ -81,5 +94,9 @@ public class Employee extends BaseEntity {
     public enum CompensationType {
         SALARIED,
         HOURLY
+    }
+
+    public enum WorkerType {
+        W2_EMPLOYEE
     }
 }

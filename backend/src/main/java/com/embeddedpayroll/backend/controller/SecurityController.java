@@ -3,6 +3,7 @@ package com.embeddedpayroll.backend.controller;
 import com.embeddedpayroll.backend.config.ApiRoutes;
 import com.embeddedpayroll.backend.dto.SecurityDtos;
 import com.embeddedpayroll.backend.repository.UserAccountRepository;
+import com.embeddedpayroll.backend.security.TenantAccessService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -19,12 +20,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class SecurityController {
 
     private final UserAccountRepository userAccountRepository;
+    private final TenantAccessService tenantAccessService;
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public SecurityDtos.CurrentUserResponse currentUser(Authentication authentication) {
         return userAccountRepository.findByUsername(authentication.getName())
             .map(SecurityDtos::fromEntity)
-            .orElseThrow(() -> new IllegalArgumentException("Authenticated user not found"));
+            .orElseGet(() -> SecurityDtos.fromActorContext(tenantAccessService.resolveActor(authentication)));
     }
 }

@@ -26,3 +26,11 @@ app:
     allowed-origins:
       - http://localhost:5173
       - http://127.0.0.1:5173
+  temporal:
+    enabled: false
+    namespace: default
+    target: 127.0.0.1:7233
+    task-queue: embedded-payroll-tax-filings
+  webhooks:
+    dispatch-enabled: true
+    dispatch-interval-ms: 60000

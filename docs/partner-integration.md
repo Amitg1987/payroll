@@ -1,55 +1,55 @@
 # Partner Integration Guide
 
-This project now exposes a **versioned partner-facing API** under:
+This project exposes a **versioned partner-facing API** under:
 
 ```text
 /api/v1/*
 ```
 
-Legacy, non-versioned routes under `/api/*` remain available for backward compatibility, but new platform-partner integrations should target `/api/v1/*`.
+Legacy `/api/*` routes remain available for compatibility, but new partner/platform integrations should target the versioned surface.
 
-## Authentication
+## 1. Authentication options
 
-Current reference authentication uses HTTP Basic Auth.
+### Interactive developer/integrator login
 
-Seeded demo users:
+Use seeded developer credentials:
 
-- `admin / Admin@123`
-- `accountant / Accountant@123`
-- `approver / Approver@123`
+- `integrator / Integrator@123`
 
-For production partner onboarding, replace this with API keys, OAuth2, or OpenID Connect.
+This role maps to `DEVELOPER_PLATFORM_INTEGRATOR`.
 
-## OpenAPI and Swagger
+### API key partner auth
 
-The backend publishes interactive documentation at:
+Programmatic integrations can use:
+
+```http
+X-API-Key: pk_live_demo_embedded_payroll_partner_2026
+```
+
+This authenticates as the seeded partner API client for the default tenant.
+
+## 2. OpenAPI / Swagger
 
 - Swagger UI: `/swagger-ui.html`
-- All API docs: `/v3/api-docs`
-- Partner-only versioned docs: `/v3/api-docs/partner-v1`
+- full docs: `/v3/api-docs`
+- partner-v1 docs: `/v3/api-docs/partner-v1`
 
-## Versioning strategy
+## 3. Key partner API workflows
 
-- `/api/v1/*` = preferred partner contract
-- `/api/*` = legacy compatibility layer
-
-This lets partner platforms onboard against a stable versioned path while existing internal consumers can keep operating during migration.
-
-## Core partner workflows
-
-### 1. Resolve current authenticated user
+### Resolve current actor / tenant context
 
 ```http
 GET /api/v1/security/me
 ```
 
-### 2. Load organization dashboard
+### Load company + jurisdiction registrations
 
 ```http
+GET /api/v1/organizations/current
 GET /api/v1/dashboard/summary?organizationId=1
 ```
 
-### 3. Manage employees and W-4 profiles
+### Programmatic employee onboarding
 
 ```http
 GET  /api/v1/employees?organizationId=1
@@ -57,42 +57,95 @@ POST /api/v1/employees
 PUT  /api/v1/employees/{employeeId}/w4
 ```
 
-### 4. Process and approve payroll
+### Payroll processing and reporting
 
 ```http
 GET  /api/v1/schedules?organizationId=1
 POST /api/v1/schedules/{scheduleId}/process
 GET  /api/v1/payroll-runs?organizationId=1
-POST /api/v1/payroll-runs/{runId}/approve
 POST /api/v1/payroll/calculate
+GET  /api/v1/reports/payroll-summary?organizationId=1&taxYear=2026
 ```
 
-### 5. Access tax rules and filing records
+### Tax rules, filings, and workflows
 
 ```http
 GET  /api/v1/tax/years
+GET  /api/v1/tax/jurisdictions
+GET  /api/v1/tax/jurisdiction-profiles?taxYear=2026&taxType=STATE_WITHHOLDING
 GET  /api/v1/tax/filings?organizationId=1&taxYear=2026
 POST /api/v1/tax/filings/generate
+GET  /api/v1/tax/workflows/filings?organizationId=1
+POST /api/v1/tax/workflows/filings
 ```
 
-## Embedding the UI
+### Partner API client and webhook management
 
-The React application consumes the versioned partner routes, and the reusable components are exported from:
+```http
+GET  /api/v1/integration/api-clients?organizationId=1
+POST /api/v1/integration/api-clients
+GET  /api/v1/integration/webhooks?organizationId=1
+POST /api/v1/integration/webhooks
+GET  /api/v1/integration/webhook-deliveries?organizationId=1
+POST /api/v1/integration/webhook-deliveries/dispatch
+```
+
+## 4. Idempotency
+
+Mutation endpoints support caller-supplied idempotency keys:
+
+```http
+Idempotency-Key: create-employee-2026-0001
+```
+
+This is especially useful for:
+
+- employee creation
+- schedule creation
+- payroll processing
+- filing generation
+- filing workflow start
+- API client issuance
+- webhook creation
+
+## 5. Webhooks
+
+Webhook endpoints are tenant-scoped and may also be associated with a partner API client.
+
+The platform signs outbound payloads with HMAC SHA-256 and sends:
+
+- `X-Webhook-Event`
+- `X-Webhook-Event-Key`
+- `X-Webhook-Signature`
+
+Current event examples include payroll run and tax filing workflow activity.
+
+## 6. Temporal-backed filings
+
+Tax filing workflows are modeled with Temporal workflow/activity definitions.
+
+When Temporal is enabled, the workflow start endpoint launches a Temporal workflow.
+When it is disabled for local development, the same endpoint falls back to local synchronous generation while preserving the workflow request record.
+
+## 7. Embedding the UI
+
+The React employer dashboard consumes the versioned partner API and exports reusable components from:
 
 ```ts
 frontend/src/components/index.ts
 ```
 
-Platform partners can:
+Partner platforms can:
 
-- embed the full app shell,
+- embed the dashboard wholesale,
 - reuse selected widgets,
-- or integrate directly against the OpenAPI contract.
+- or consume the API contract directly.
 
-## Recommended next partner hardening steps
+## 8. Recommended production hardening
 
-- move from Basic Auth to OAuth2/API keys,
-- add request idempotency for mutation endpoints,
-- add outbound webhooks for payroll/filing events,
-- enforce stronger tenant isolation than request-parameter scoping,
-- publish SDKs generated from the OpenAPI spec.
+- rotate API keys and webhook secrets through a secret manager
+- add tenant-aware gateway rate limits
+- publish SDKs generated from the OpenAPI spec
+- add stronger tenant partitioning at the persistence layer
+- integrate certified filing/remittance providers
+- run Temporal against a managed or production-grade cluster

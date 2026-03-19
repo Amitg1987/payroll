@@ -51,6 +51,7 @@ public class UserAccount extends BaseEntity {
     public enum RoleName {
         ADMIN,
         ACCOUNTANT,
-        APPROVER
+        APPROVER,
+        DEVELOPER_PLATFORM_INTEGRATOR
     }
 }

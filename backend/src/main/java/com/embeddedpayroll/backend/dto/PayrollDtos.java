@@ -64,10 +64,14 @@ public final class PayrollDtos {
             item.getMedicareEmployeeTax(),
             item.getAdditionalMedicareEmployeeTax(),
             item.getStateIncomeTax(),
+            item.getLocalIncomeTax(),
             item.getEmployeeTaxTotal(),
             item.getEmployerSocialSecurityTax(),
             item.getEmployerMedicareTax(),
             item.getEmployerFutaTax(),
+            item.getEmployerStateUnemploymentTax(),
+            item.getStateJurisdictionCode(),
+            item.getLocalJurisdictionCode(),
             item.getNetPay()
         );
     }
@@ -151,10 +155,14 @@ public final class PayrollDtos {
         BigDecimal medicareEmployeeTax,
         BigDecimal additionalMedicareEmployeeTax,
         BigDecimal stateIncomeTax,
+        BigDecimal localIncomeTax,
         BigDecimal employeeTaxTotal,
         BigDecimal employerSocialSecurityTax,
         BigDecimal employerMedicareTax,
         BigDecimal employerFutaTax,
+        BigDecimal employerStateUnemploymentTax,
+        String stateJurisdictionCode,
+        String localJurisdictionCode,
         BigDecimal netPay
     ) {
     }
@@ -171,10 +179,12 @@ public final class PayrollDtos {
         BigDecimal medicareEmployeeTax,
         BigDecimal additionalMedicareEmployeeTax,
         BigDecimal stateIncomeTax,
+        BigDecimal localIncomeTax,
         BigDecimal employeeTaxTotal,
         BigDecimal employerSocialSecurityTax,
         BigDecimal employerMedicareTax,
         BigDecimal employerFutaTax,
+        BigDecimal employerStateUnemploymentTax,
         BigDecimal netPay
     ) {
     }

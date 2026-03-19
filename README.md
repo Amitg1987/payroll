@@ -1,162 +1,322 @@
-# Embedded US Payroll and Tax Processing Platform
+# Embedded US Payroll and Tax Platform
 
-Reference implementation of an embeddable payroll and tax processing system for the US market.
+Reference implementation of a **multi-tenant payroll and tax platform for the US market** that can be embedded into external products via:
 
-The project includes:
+- a versioned REST API
+- reusable React + TypeScript UI components
+- partner API keys
+- webhook events
 
-- **Java + Spring Boot backend** for payroll APIs, RBAC, tax-year aware payroll calculations, filing records, and seeded demo data.
-- **React + TypeScript frontend** with reusable UI components that can be embedded into larger HR, ERP, finance, or workforce platforms.
-- **Detailed schema documentation** for employee, W-4, payroll run, tax rule, approval, and filing entities.
+The stack includes:
 
-> This is a compliance-oriented starter aligned to US payroll concepts (W-4 withholding, FICA/FUTA, approval controls, historical tax years, and filing records). A production rollout still needs authoritative tax table feeds, state/local tax logic, notice processing, and certified filing integrations.
+- **Backend:** Java 21 + Spring Boot
+- **Frontend:** React + TypeScript + Vite
+- **Workflow orchestration:** Temporal-compatible tax filing workflows
 
-## 1. Solution capabilities
+> This repository is a strong implementation starter for embedded payroll and tax operations. It models US payroll concepts and integration patterns, but a production launch still requires certified tax content, payment rails, operational controls, and compliance validation.
 
-### Payroll and employee management
+---
 
-- Maintain employee master data and compensation setup.
-- Store versioned **W-4 tax profiles** by tax year.
-- Support salaried and hourly employees.
-- Track pay schedules with weekly, biweekly, semimonthly, and monthly frequencies.
-- Compute **gross-to-net payroll** with federal withholding, Social Security, Medicare, additional Medicare, FUTA, and state withholding assumptions.
+## 1. What the project now supports
 
-### Approval and RBAC
+### Company / organization and jurisdiction support
 
-- Database-backed user accounts with roles:
-  - **ADMIN**
-  - **ACCOUNTANT**
-  - **APPROVER**
-- Role-aware API security through Spring Security Basic Auth.
-- Payroll runs can enter a **pending approval** state before release.
+- multi-tenant organization model
+- tenant key per company
+- company registration and nexus records for state/local jurisdictions
+- company primary payroll jurisdiction and headquarters local jurisdiction
 
-### Tax engine and historical support
+### Payroll engine
 
-- Seeded tax rule profiles for **2021-2026**, covering the previous five historical tax years plus a current-year reference profile.
-- Versioned federal tax brackets by filing status.
-- Filing record generation for:
-  - **Form 941**
-  - **Form 940**
-  - **Form W-2**
-  - **Form W-3**
-  - **State withholding summary**
+- W-2 employee payroll processing
+- multi-tenant gross-to-net calculations
+- salary and hourly worker support
+- employee W-4 profile management by tax year
+- scheduled payroll runs with approval workflows
+- atomic transactional writes across payroll headers, items, and event/outbox artifacts
 
-### Embedded integration model
+### Tax engine
 
-- Backend exposes REST APIs for partner platform integration.
-- New partner-facing integrations should use the versioned surface at **`/api/v1/*`**.
-- Legacy **`/api/*`** routes remain available for backward compatibility.
-- Frontend includes reusable components in:
-  - `frontend/src/components/index.ts`
-- Components can be consumed by another React application or adapted into a library/distribution pipeline.
-- OpenAPI/Swagger documentation is available at:
-  - `/swagger-ui.html`
-  - `/v3/api-docs`
-  - `/v3/api-docs/partner-v1`
+- federal payroll taxes:
+  - FIT
+  - FICA / Social Security
+  - Medicare
+  - Additional Medicare
+  - FUTA
+- seeded support for **all 50 US states**
+- data-driven support for **local jurisdictions**
+- employer-side state unemployment tax support
+- historical federal tax year support for 2021-2026
+
+### Filing automation
+
+- tax filing records for:
+  - Form 941
+  - Form 940
+  - Form W-2
+  - Form W-3
+  - state withholding
+  - local withholding
+- automated filing workflow requests using **Temporal-compatible workflow definitions**
+- local development fallback when Temporal is not enabled
+
+### Partner integration
+
+- versioned API surface under **`/api/v1/*`**
+- legacy `/api/*` compatibility routes retained
+- **API key partner auth**
+- **idempotency key support** for key create/update operations
+- **webhook endpoint registration and delivery tracking**
+- developer / platform integrator role and dashboard features
+
+### Employer dashboard
+
+- payroll run monitoring
+- payroll reporting summary
+- company jurisdiction visibility
+- partner API client management
+- webhook management and delivery visibility
+- filing generation and workflow tracking
+
+---
 
 ## 2. Repository structure
 
 ```text
 .
-├── backend/                 Spring Boot payroll API
-├── frontend/                React + TypeScript UI shell and embeddable components
+├── backend/                 Spring Boot payroll API and workflow integration
+├── frontend/                React + TypeScript employer dashboard + embeddable UI
 ├── docs/
-│   └── schema.md            Detailed schema and data model documentation
+│   ├── schema.md            Detailed database schema
+│   └── partner-integration.md
 └── README.md
 ```
 
-## 3. Backend overview
+---
 
-### Main backend modules
+## 3. Backend architecture
+
+### Core modules
 
 - `config/`
-  - Spring Security configuration
-  - CORS configuration properties
+  - security
+  - CORS
+  - OpenAPI / Swagger
+  - Temporal configuration
 - `controller/`
-  - Employee APIs
-  - Payroll schedule/run APIs
-  - Tax year/filing APIs
-  - Dashboard/security APIs
+  - security, dashboard, employees, payroll, tax
+  - organization profile and jurisdictions
+  - reporting
+  - partner integration (API clients, webhooks, deliveries)
 - `model/`
-  - Organizations
-  - User accounts and roles
-  - Employees
-  - Employee W-4 profiles
-  - Payroll schedules
-  - Payroll runs and payroll run items
-  - Tax year profiles and federal brackets
-  - Tax filing records
+  - organizations and organization jurisdictions
+  - users and partner API clients
+  - employees and W-4 profiles
+  - payroll schedules, runs, and run items
+  - federal tax years / brackets
+  - tax jurisdictions and jurisdiction tax profiles
+  - idempotency records
+  - webhook endpoints and deliveries
+  - tax filing records and workflow requests
 - `service/`
-  - Tax calculation engine
-  - Payroll orchestration
-  - Tax filing generation
-  - Demo data initializer
+  - payroll engine
+  - tax engine
+  - reporting
+  - idempotency support
+  - webhook dispatch
+  - partner integration services
+  - Temporal-compatible tax filing workflow support
 
-### Key API endpoints
+### Versioned API strategy
+
+- preferred partner contract: **`/api/v1/*`**
+- legacy compatibility contract: **`/api/*`**
+
+### OpenAPI / Swagger
+
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- full API docs: `http://localhost:8080/v3/api-docs`
+- partner-v1 docs: `http://localhost:8080/v3/api-docs/partner-v1`
+
+---
+
+## 4. Major API areas
+
+### Security and tenant context
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/api/v1/security/me` | GET | Current authenticated user |
-| `/api/v1/dashboard/summary` | GET | Dashboard metrics for an organization |
-| `/api/v1/employees` | GET/POST | List or create employees |
-| `/api/v1/employees/{id}/w4` | PUT | Upsert W-4 profile |
-| `/api/v1/schedules` | GET/POST | List or create payroll schedules |
-| `/api/v1/schedules/{id}/process` | POST | Process a scheduled payroll |
-| `/api/v1/payroll-runs` | GET | List payroll runs and line items |
-| `/api/v1/payroll-runs/{id}/approve` | POST | Approve a payroll run |
-| `/api/v1/payroll/calculate` | POST | Ad hoc gross-to-net calculation |
-| `/api/v1/tax/years` | GET | Historical tax year support and bracket tables |
-| `/api/v1/tax/filings` | GET | List filing records |
-| `/api/v1/tax/filings/generate` | POST | Generate filing summary records |
+| `/api/v1/security/me` | GET | current user or API-key actor |
+| `/api/v1/dashboard/summary` | GET | tenant dashboard summary |
+| `/api/v1/organizations/current` | GET | current company + jurisdiction registrations |
 
-Legacy `/api/*` paths are still supported to avoid breaking existing consumers.
+### Employee and payroll
 
-### Demo users
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/v1/employees` | GET/POST | list or create employees |
+| `/api/v1/employees/{id}/w4` | PUT | upsert W-4 profile |
+| `/api/v1/schedules` | GET/POST | list or create payroll schedules |
+| `/api/v1/schedules/{id}/process` | POST | process payroll for a schedule |
+| `/api/v1/payroll-runs` | GET | payroll run history |
+| `/api/v1/payroll-runs/{id}/approve` | POST | approve payroll run |
+| `/api/v1/payroll/calculate` | POST | gross-to-net calculation |
+| `/api/v1/reports/payroll-summary` | GET | employer payroll reporting summary |
+
+### Tax and jurisdictions
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/v1/tax/years` | GET | federal tax years |
+| `/api/v1/tax/jurisdictions` | GET | all jurisdictions |
+| `/api/v1/tax/jurisdiction-profiles` | GET | state/local tax profiles by year/type |
+| `/api/v1/tax/filings` | GET | filing records |
+| `/api/v1/tax/filings/generate` | POST | direct filing generation |
+| `/api/v1/tax/workflows/filings` | GET/POST | Temporal-compatible filing workflows |
+
+### Partner integration
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/v1/integration/api-clients` | GET/POST | list or issue partner API keys |
+| `/api/v1/integration/webhooks` | GET/POST | list or register webhook endpoints |
+| `/api/v1/integration/webhook-deliveries` | GET | list delivery attempts |
+| `/api/v1/integration/webhook-deliveries/dispatch` | POST | trigger pending dispatches |
+
+---
+
+## 5. Authentication and authorization
+
+### Interactive users
 
 Seeded demo credentials:
 
 - `admin / Admin@123`
 - `accountant / Accountant@123`
 - `approver / Approver@123`
+- `integrator / Integrator@123`
 
-## 4. Frontend overview
+Roles:
 
-The frontend is a dashboard shell plus reusable components that can be lifted into another product experience.
+- `ADMIN`
+- `ACCOUNTANT`
+- `APPROVER`
+- `DEVELOPER_PLATFORM_INTEGRATOR`
 
-### Reusable UI components
+### API key auth
 
-- `ConnectionPanel`
-- `StatCard`
-- `RoleBadge`
-- `SectionCard`
-- `EmployeeTable`
-- `PayrollCalculator`
-- `PayrollRunTable`
-- `TaxFilingTable`
-- `TaxYearCard`
+Partner API clients authenticate with:
 
-All components are exported from:
-
-```ts
-frontend/src/components/index.ts
+```text
+X-API-Key: <raw-api-key>
 ```
 
-## 5. Detailed schema
+Seeded demo API key:
+
+```text
+pk_live_demo_embedded_payroll_partner_2026
+```
+
+This authenticates as the seeded partner client for the default tenant.
+
+---
+
+## 6. Idempotency and webhooks
+
+### Idempotency
+
+Key write endpoints support:
+
+```text
+Idempotency-Key: <caller-generated-key>
+```
+
+The backend stores the request fingerprint and serialized response so repeat submissions with the same key are replayed safely.
+
+### Webhooks
+
+Webhook support includes:
+
+- endpoint registration
+- HMAC SHA-256 signing
+- delivery queue / outbox persistence
+- retry state tracking
+- manual or scheduled dispatch
+
+Example webhook headers:
+
+- `X-Webhook-Event`
+- `X-Webhook-Event-Key`
+- `X-Webhook-Signature`
+
+---
+
+## 7. Temporal workflow support
+
+The project includes Temporal workflow and activity definitions for tax filing orchestration.
+
+### Default development behavior
+
+Temporal is **disabled by default**. In this mode:
+
+- filing workflow requests are still created
+- filings are generated through a local development fallback
+
+### Enable Temporal
+
+Configure in `backend/src/main/resources/application.yml`:
+
+```yaml
+app:
+  temporal:
+    enabled: true
+    namespace: default
+    target: 127.0.0.1:7233
+    task-queue: embedded-payroll-tax-filings
+```
+
+Then run a Temporal server locally (for example via Temporal CLI, Temporalite, or Docker) before starting the backend.
+
+---
+
+## 8. Frontend / employer dashboard
+
+The frontend is a React + TypeScript dashboard that can be:
+
+- run as a standalone employer console
+- embedded as part of another platform
+- mined for reusable components from `frontend/src/components/index.ts`
+
+### Dashboard features
+
+- company and jurisdiction visibility
+- employee and W-4 maintenance
+- payroll calculator
+- payroll run processing and approvals
+- tax filing records and workflow requests
+- partner API client issuance
+- webhook management and delivery monitoring
+- payroll reporting
+
+---
+
+## 9. Detailed schema
 
 See:
 
 - [`docs/schema.md`](docs/schema.md)
 - [`docs/partner-integration.md`](docs/partner-integration.md)
 
-This document explains the normalized data model, relationships, and tax-year versioning approach.
+---
 
-## 6. How to build and run
+## 10. How to build and run
 
 ### Prerequisites
 
 - Java 21+
 - Node.js 22+
 
-No system Maven install is required because the backend includes the Maven wrapper.
+The backend uses the Maven wrapper, so a system Maven install is not required.
 
 ### Backend
 
@@ -165,15 +325,10 @@ cd backend
 ./mvnw spring-boot:run
 ```
 
-Backend default URL:
+Backend URLs:
 
 ```text
 http://localhost:8080
-```
-
-Swagger/OpenAPI:
-
-```text
 http://localhost:8080/swagger-ui.html
 http://localhost:8080/v3/api-docs
 http://localhost:8080/v3/api-docs/partner-v1
@@ -187,16 +342,20 @@ npm install
 npm run dev
 ```
 
-Frontend default URL:
+Frontend URL:
 
 ```text
 http://localhost:5173
 ```
 
-The frontend is preconfigured to connect to `http://localhost:8080` by default, but the connection panel lets you point the UI at any compatible backend deployment.
-The frontend client uses the versioned partner API paths under `/api/v1/*`.
+The frontend can connect using:
 
-## 7. How to build production artifacts
+- username/password
+- or a partner API key
+
+---
+
+## 11. Build production artifacts
 
 ### Backend JAR
 
@@ -205,19 +364,19 @@ cd backend
 ./mvnw clean package
 ```
 
-Generated artifact:
+Artifact:
 
 ```text
 backend/target/embedded-payroll-backend-0.0.1-SNAPSHOT.jar
 ```
 
-Run the packaged backend:
+Run:
 
 ```bash
 java -jar backend/target/embedded-payroll-backend-0.0.1-SNAPSHOT.jar
 ```
 
-### Frontend static bundle
+### Frontend bundle
 
 ```bash
 cd frontend
@@ -225,64 +384,72 @@ npm install
 npm run build
 ```
 
-Generated frontend assets:
+Bundle output:
 
 ```text
 frontend/dist/
 ```
 
-## 8. Deployment guidance
+---
 
-### Recommended deployment topology
+## 12. Verification
 
-1. Deploy the Spring Boot service behind an API gateway or ingress.
-2. Deploy the React build as static assets behind a CDN or reverse proxy.
-3. Place both behind your platform authentication or retain the built-in API authentication layer.
-4. Replace H2 with a production database and move seeded demo data to migrations or onboarding flows.
-5. Replace seeded tax profiles with a governed regulatory/tax-content update process.
-
-### Suggested production hardening
-
-- Migrate authentication from demo Basic Auth to SSO or OAuth2/OpenID Connect.
-- Back the app with PostgreSQL or another production-grade RDBMS.
-- Add audit trails, approval evidence, and ledger postings.
-- Add state/local tax tables and jurisdiction mapping.
-- Integrate ACH/direct deposit and certified tax filing providers.
-- Add outbound notifications and payroll close controls.
-
-## 9. Testing
-
-### Backend tests
+Backend:
 
 ```bash
 cd backend
 ./mvnw test
+./mvnw package -DskipTests
 ```
 
-### Frontend checks
+Frontend:
 
 ```bash
 cd frontend
-npm install
 npm run build
 ```
 
-## 10. Compliance framing
+---
 
-This project is designed around US payroll and accounting norms:
+## 13. Deployment guidance
 
-- W-4-based withholding capture
-- FICA/FUTA aware payroll calculations
-- tax-year versioned federal rules
-- payroll approval workflow
-- filing record generation
-- masked SSN handling in UI/API responses
+### Recommended deployment model
 
-Before production go-live, validate the implementation against:
+1. Run the Spring Boot API behind an API gateway / ingress.
+2. Deploy the frontend bundle behind a reverse proxy or CDN.
+3. Replace the in-memory H2 database with PostgreSQL or another production RDBMS.
+4. Put partner APIs behind gateway controls such as rate limiting and request logging.
+5. Enable Temporal with a managed/self-hosted cluster for production filing workflows.
 
-- IRS publications and annual withholding tables
-- SSA wage base updates
-- state and local tax agencies
-- wage-hour rules
-- electronic filing and remittance requirements
-- organization-specific accounting, approval, and retention policies
+### Production hardening checklist
+
+- move from demo Basic Auth to SSO / OAuth2 for interactive users
+- rotate and vault API keys / webhook signing secrets
+- add stronger tenant isolation at the data and gateway layers
+- add payment rails / ACH integration
+- add certified filing provider integrations
+- add richer state and local tax content maintenance
+- add audit, reconciliation, and accounting postings
+- add observability and alerting around workflow/webhook failures
+
+---
+
+## 14. Important note on compliance
+
+This project is designed around US payroll and tax norms and now includes:
+
+- W-2-focused payroll processing
+- federal withholding and FICA/FUTA modeling
+- 50-state seeded tax coverage
+- local jurisdiction support
+- filing records and workflow orchestration
+- partner integration patterns (API keys, idempotency, webhooks)
+
+Before production use, validate against:
+
+- IRS and SSA updates
+- each state labor / revenue authority
+- local taxing jurisdictions
+- payroll accounting policy
+- retention and audit requirements
+- filing/remittance provider requirements

@@ -1,6 +1,7 @@
 package com.embeddedpayroll.backend.dto;
 
 import com.embeddedpayroll.backend.model.UserAccount;
+import com.embeddedpayroll.backend.security.ActorContext;
 import java.util.Set;
 
 public final class SecurityDtos {
@@ -15,7 +16,24 @@ public final class SecurityDtos {
             userAccount.getUsername(),
             userAccount.getFullName(),
             userAccount.getEmail(),
-            userAccount.getRoles()
+            userAccount.getRoles().stream().map(Enum::name).collect(java.util.stream.Collectors.toUnmodifiableSet()),
+            ActorContext.AuthenticationMode.BASIC_USER.name(),
+            null
+        );
+    }
+
+    public static CurrentUserResponse fromActorContext(ActorContext actorContext) {
+        return new CurrentUserResponse(
+            null,
+            actorContext.organizationId(),
+            actorContext.actorKey(),
+            actorContext.displayName(),
+            null,
+            actorContext.authorities().stream()
+                .map(authority -> authority.replaceFirst("^ROLE_", ""))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet()),
+            actorContext.authenticationMode().name(),
+            actorContext.partnerClientCode()
         );
     }
 
@@ -25,7 +43,9 @@ public final class SecurityDtos {
         String username,
         String fullName,
         String email,
-        Set<UserAccount.RoleName> roles
+        Set<String> roles,
+        String authenticationMode,
+        String partnerClientCode
     ) {
     }
 }

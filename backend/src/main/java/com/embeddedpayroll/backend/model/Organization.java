@@ -14,6 +14,9 @@ import lombok.Setter;
 @Table(name = "organizations")
 public class Organization extends BaseEntity {
 
+    @Column(nullable = false, unique = true, length = 64)
+    private String tenantKey;
+
     @Column(nullable = false, unique = true, length = 32)
     private String code;
 
@@ -28,6 +31,15 @@ public class Organization extends BaseEntity {
 
     @Column(nullable = false, length = 8)
     private String defaultStateCode;
+
+    @Column(nullable = false, length = 8)
+    private String countryCode = "US";
+
+    @Column(nullable = false, length = 32)
+    private String primaryJurisdictionCode;
+
+    @Column(length = 32)
+    private String headquartersLocalJurisdictionCode;
 
     @Column(nullable = false, length = 8)
     private String defaultCurrency = "USD";

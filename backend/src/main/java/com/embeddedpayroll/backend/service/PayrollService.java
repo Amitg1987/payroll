@@ -36,6 +36,7 @@ public class PayrollService {
     private final PayrollRunRepository payrollRunRepository;
     private final PayrollRunItemRepository payrollRunItemRepository;
     private final TaxEngineService taxEngineService;
+    private final WebhookService webhookService;
 
     @Transactional(readOnly = true)
     public List<Employee> listEmployees(Long organizationId) {
@@ -44,6 +45,12 @@ public class PayrollService {
 
     @Transactional
     public Employee createEmployee(EmployeeDtos.CreateEmployeeRequest request) {
+        return createEmployee(request, request.organizationId());
+    }
+
+    @Transactional
+    public Employee createEmployee(EmployeeDtos.CreateEmployeeRequest request, Long actorOrganizationId) {
+        assertSameOrganization(actorOrganizationId, request.organizationId());
         Organization organization = organizationRepository.findById(request.organizationId())
             .orElseThrow(() -> new IllegalArgumentException("Organization not found: " + request.organizationId()));
 
@@ -57,8 +64,12 @@ public class PayrollService {
         employee.setHireDate(request.hireDate());
         employee.setEmploymentStatus(request.employmentStatus());
         employee.setCompensationType(request.compensationType());
+        employee.setWorkerType(Employee.WorkerType.W2_EMPLOYEE);
         employee.setDepartment(request.department());
         employee.setWorkState(request.workState());
+        employee.setResidenceState(request.residenceState());
+        employee.setWorkLocalJurisdictionCode(request.workLocalJurisdictionCode());
+        employee.setResidenceLocalJurisdictionCode(request.residenceLocalJurisdictionCode());
         employee.setAnnualSalary(request.annualSalary());
         employee.setHourlyRate(request.hourlyRate());
         employee.setStandardHoursPerPeriod(request.standardHoursPerPeriod());
@@ -72,8 +83,16 @@ public class PayrollService {
 
     @Transactional
     public EmployeeW4Profile upsertW4(Long employeeId, EmployeeDtos.W4Request request) {
+        return upsertW4(employeeId, request, null);
+    }
+
+    @Transactional
+    public EmployeeW4Profile upsertW4(Long employeeId, EmployeeDtos.W4Request request, Long actorOrganizationId) {
         Employee employee = employeeRepository.findById(employeeId)
             .orElseThrow(() -> new IllegalArgumentException("Employee not found: " + employeeId));
+        if (actorOrganizationId != null) {
+            assertSameOrganization(actorOrganizationId, employee.getOrganization().getId());
+        }
         EmployeeW4Profile profile = employeeW4ProfileRepository.findByEmployeeIdAndTaxYear(employeeId, request.taxYear())
             .orElseGet(EmployeeW4Profile::new);
         profile.setEmployee(employee);
@@ -103,6 +122,12 @@ public class PayrollService {
 
     @Transactional
     public PayrollSchedule createSchedule(PayrollDtos.CreateScheduleRequest request) {
+        return createSchedule(request, request.organizationId());
+    }
+
+    @Transactional
+    public PayrollSchedule createSchedule(PayrollDtos.CreateScheduleRequest request, Long actorOrganizationId) {
+        assertSameOrganization(actorOrganizationId, request.organizationId());
         Organization organization = organizationRepository.findById(request.organizationId())
             .orElseThrow(() -> new IllegalArgumentException("Organization not found: " + request.organizationId()));
         PayrollSchedule schedule = new PayrollSchedule();
@@ -137,8 +162,21 @@ public class PayrollService {
         PayrollDtos.ProcessScheduleRequest request,
         String createdBy
     ) {
+        return processSchedule(scheduleId, request, createdBy, null);
+    }
+
+    @Transactional
+    public PayrollRun processSchedule(
+        Long scheduleId,
+        PayrollDtos.ProcessScheduleRequest request,
+        String createdBy,
+        Long actorOrganizationId
+    ) {
         PayrollSchedule schedule = payrollScheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new IllegalArgumentException("Payroll schedule not found: " + scheduleId));
+        if (actorOrganizationId != null) {
+            assertSameOrganization(actorOrganizationId, schedule.getOrganization().getId());
+        }
         LocalDate payDate = request.payDate() != null ? request.payDate() : schedule.getNextPayDate();
         int taxYear = request.taxYear() != null ? request.taxYear() : payDate.getYear();
         LocalDate periodEnd = payDate.minusDays(1);
@@ -208,23 +246,67 @@ public class PayrollService {
         savedRun.setNetTotal(netTotal);
         schedule.setNextPayDate(schedule.getFrequency().advance(payDate));
         payrollScheduleRepository.save(schedule);
-        return payrollRunRepository.save(savedRun);
+        PayrollRun completedRun = payrollRunRepository.save(savedRun);
+        webhookService.enqueueEvent(
+            schedule.getOrganization().getId(),
+            "payroll.run.created",
+            "payroll-run-" + completedRun.getId(),
+            Map.of(
+                "payrollRunId", completedRun.getId(),
+                "organizationId", schedule.getOrganization().getId(),
+                "status", completedRun.getStatus().name(),
+                "grossTotal", completedRun.getGrossTotal(),
+                "netTotal", completedRun.getNetTotal()
+            )
+        );
+        return completedRun;
     }
 
     @Transactional
     public PayrollRun approveRun(Long runId, String approvedBy) {
+        return approveRun(runId, approvedBy, null);
+    }
+
+    @Transactional
+    public PayrollRun approveRun(Long runId, String approvedBy, Long actorOrganizationId) {
         PayrollRun run = payrollRunRepository.findById(runId)
             .orElseThrow(() -> new IllegalArgumentException("Payroll run not found: " + runId));
+        if (actorOrganizationId != null) {
+            assertSameOrganization(actorOrganizationId, run.getPayrollSchedule().getOrganization().getId());
+        }
         run.setStatus(PayrollRun.RunStatus.APPROVED);
         run.setApprovedBy(approvedBy);
         run.setApprovedAt(OffsetDateTime.now());
-        return payrollRunRepository.save(run);
+        PayrollRun approvedRun = payrollRunRepository.save(run);
+        webhookService.enqueueEvent(
+            approvedRun.getPayrollSchedule().getOrganization().getId(),
+            "payroll.run.approved",
+            "payroll-run-" + approvedRun.getId(),
+            Map.of(
+                "payrollRunId", approvedRun.getId(),
+                "organizationId", approvedRun.getPayrollSchedule().getOrganization().getId(),
+                "status", approvedRun.getStatus().name(),
+                "approvedBy", approvedBy
+            )
+        );
+        return approvedRun;
     }
 
     @Transactional(readOnly = true)
     public TaxEngineService.PayrollComputation calculatePayroll(PayrollDtos.PayrollCalculationRequest request) {
+        return calculatePayroll(request, null);
+    }
+
+    @Transactional(readOnly = true)
+    public TaxEngineService.PayrollComputation calculatePayroll(
+        PayrollDtos.PayrollCalculationRequest request,
+        Long actorOrganizationId
+    ) {
         Employee employee = employeeRepository.findById(request.employeeId())
             .orElseThrow(() -> new IllegalArgumentException("Employee not found: " + request.employeeId()));
+        if (actorOrganizationId != null) {
+            assertSameOrganization(actorOrganizationId, employee.getOrganization().getId());
+        }
         EmployeeW4Profile w4Profile = findCurrentW4(employee.getId(), request.taxYear());
         return taxEngineService.calculate(
             employee,
@@ -256,10 +338,14 @@ public class PayrollService {
         item.setMedicareEmployeeTax(computation.medicareEmployeeTax());
         item.setAdditionalMedicareEmployeeTax(computation.additionalMedicareEmployeeTax());
         item.setStateIncomeTax(computation.stateIncomeTax());
+        item.setLocalIncomeTax(computation.localIncomeTax());
         item.setEmployeeTaxTotal(computation.employeeTaxTotal());
         item.setEmployerSocialSecurityTax(computation.employerSocialSecurityTax());
         item.setEmployerMedicareTax(computation.employerMedicareTax());
         item.setEmployerFutaTax(computation.employerFutaTax());
+        item.setEmployerStateUnemploymentTax(computation.employerStateUnemploymentTax());
+        item.setStateJurisdictionCode(computation.stateJurisdictionCode());
+        item.setLocalJurisdictionCode(computation.localJurisdictionCode());
         item.setNetPay(computation.netPay());
         return item;
     }
@@ -273,6 +359,15 @@ public class PayrollService {
         }
         if (employee.getAnnualSalary() == null || employee.getAnnualSalary().signum() <= 0) {
             throw new IllegalArgumentException("Salaried employees must have an annual salary");
+        }
+    }
+
+    private void assertSameOrganization(Long actorOrganizationId, Long targetOrganizationId) {
+        if (actorOrganizationId == null) {
+            return;
+        }
+        if (!actorOrganizationId.equals(targetOrganizationId)) {
+            throw new IllegalArgumentException("Cross-organization payroll access is not permitted");
         }
     }
 }

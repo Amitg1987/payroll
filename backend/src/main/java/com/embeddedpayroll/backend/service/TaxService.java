@@ -1,14 +1,19 @@
 package com.embeddedpayroll.backend.service;
 
 import com.embeddedpayroll.backend.dto.TaxDtos;
+import com.embeddedpayroll.backend.model.JurisdictionTaxProfile;
+import com.embeddedpayroll.backend.model.Organization;
 import com.embeddedpayroll.backend.model.PayrollRun;
 import com.embeddedpayroll.backend.model.PayrollRunItem;
 import com.embeddedpayroll.backend.model.TaxFilingRecord;
+import com.embeddedpayroll.backend.model.TaxJurisdiction;
 import com.embeddedpayroll.backend.model.TaxYearProfile;
+import com.embeddedpayroll.backend.repository.JurisdictionTaxProfileRepository;
 import com.embeddedpayroll.backend.repository.OrganizationRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunItemRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunRepository;
 import com.embeddedpayroll.backend.repository.TaxFilingRecordRepository;
+import com.embeddedpayroll.backend.repository.TaxJurisdictionRepository;
 import com.embeddedpayroll.backend.repository.TaxYearProfileRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -28,6 +33,9 @@ public class TaxService {
     private final PayrollRunRepository payrollRunRepository;
     private final PayrollRunItemRepository payrollRunItemRepository;
     private final TaxFilingRecordRepository taxFilingRecordRepository;
+    private final TaxJurisdictionRepository taxJurisdictionRepository;
+    private final JurisdictionTaxProfileRepository jurisdictionTaxProfileRepository;
+    private final WebhookService webhookService;
 
     @Transactional(readOnly = true)
     public List<TaxYearProfile> listTaxYears() {
@@ -41,7 +49,30 @@ public class TaxService {
 
     @Transactional
     public TaxFilingRecord generateFiling(TaxDtos.GenerateFilingRequest request) {
-        organizationRepository.findById(request.organizationId())
+        return generateFiling(request, "system", null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TaxJurisdiction> listJurisdictions() {
+        return taxJurisdictionRepository.findAll();
+    }
+
+    @Transactional(readOnly = true)
+    public List<JurisdictionTaxProfile> listJurisdictionProfiles(
+        Integer taxYear,
+        JurisdictionTaxProfile.TaxType taxType
+    ) {
+        return jurisdictionTaxProfileRepository.findByTaxYearAndTaxTypeOrderByTaxJurisdiction_NameAsc(taxYear, taxType);
+    }
+
+    @Transactional
+    public TaxFilingRecord generateFiling(
+        TaxDtos.GenerateFilingRequest request,
+        String requestedBy,
+        String workflowId,
+        String workflowRunId
+    ) {
+        Organization organization = organizationRepository.findById(request.organizationId())
             .orElseThrow(() -> new IllegalArgumentException("Organization not found: " + request.organizationId()));
 
         DateRange dateRange = resolvePeriodRange(request.taxYear(), request.filingPeriod());
@@ -57,6 +88,7 @@ public class TaxService {
             .flatMap(run -> payrollRunItemRepository.findByPayrollRunIdOrderByEmployeeLastNameAscEmployeeFirstNameAsc(
                 run.getId()
             ).stream())
+            .filter(item -> includeForJurisdiction(item, request))
             .toList();
 
         BigDecimal totalWages = items.stream()
@@ -77,9 +109,13 @@ public class TaxService {
             case FORM_W2, FORM_W3, STATE_WITHHOLDING -> items.stream()
                 .map(item -> item.getFederalIncomeTax()
                     .add(item.getStateIncomeTax())
+                    .add(item.getLocalIncomeTax())
                     .add(item.getSocialSecurityEmployeeTax())
                     .add(item.getMedicareEmployeeTax())
                     .add(item.getAdditionalMedicareEmployeeTax()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            case LOCAL_WITHHOLDING -> items.stream()
+                .map(PayrollRunItem::getLocalIncomeTax)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         };
 
@@ -92,17 +128,27 @@ public class TaxService {
             .findFirst()
             .orElseGet(TaxFilingRecord::new);
 
-        filingRecord.setOrganization(organizationRepository.getReferenceById(request.organizationId()));
+        filingRecord.setOrganization(organization);
         filingRecord.setFilingType(request.filingType());
         filingRecord.setTaxYear(request.taxYear());
         filingRecord.setFilingPeriod(request.filingPeriod().toUpperCase());
+        filingRecord.setFilingJurisdictionCode(resolveFilingJurisdictionCode(request, organization));
         filingRecord.setDueDate(request.dueDate() != null ? request.dueDate() : defaultDueDate(request.taxYear(), request.filingType(), request.filingPeriod()));
         filingRecord.setStatus(TaxFilingRecord.RecordStatus.GENERATED);
         filingRecord.setTotalWages(totalWages);
         filingRecord.setTotalTax(totalTax);
         filingRecord.setGeneratedAt(OffsetDateTime.now());
         filingRecord.setReferenceNumber(referenceNumber(request));
-        return taxFilingRecordRepository.save(filingRecord);
+        filingRecord.setTemporalWorkflowId(workflowId);
+        filingRecord.setTemporalRunId(workflowRunId);
+        TaxFilingRecord savedRecord = taxFilingRecordRepository.save(filingRecord);
+        webhookService.enqueueEvent(
+            request.organizationId(),
+            "tax.filing.generated",
+            savedRecord.getReferenceNumber(),
+            TaxDtos.fromEntity(savedRecord)
+        );
+        return savedRecord;
     }
 
     private String referenceNumber(TaxDtos.GenerateFilingRequest request) {
@@ -113,10 +159,34 @@ public class TaxService {
         );
     }
 
+    private boolean includeForJurisdiction(PayrollRunItem item, TaxDtos.GenerateFilingRequest request) {
+        if (request.filingJurisdictionCode() == null || request.filingJurisdictionCode().isBlank()) {
+            return true;
+        }
+        return switch (request.filingType()) {
+            case STATE_WITHHOLDING -> request.filingJurisdictionCode().equalsIgnoreCase(item.getStateJurisdictionCode());
+            case LOCAL_WITHHOLDING -> request.filingJurisdictionCode().equalsIgnoreCase(item.getLocalJurisdictionCode());
+            default -> true;
+        };
+    }
+
+    private String resolveFilingJurisdictionCode(TaxDtos.GenerateFilingRequest request, Organization organization) {
+        if (request.filingJurisdictionCode() != null && !request.filingJurisdictionCode().isBlank()) {
+            return request.filingJurisdictionCode();
+        }
+        return switch (request.filingType()) {
+            case STATE_WITHHOLDING -> organization.getPrimaryJurisdictionCode();
+            case LOCAL_WITHHOLDING -> organization.getHeadquartersLocalJurisdictionCode() == null
+                ? organization.getPrimaryJurisdictionCode()
+                : organization.getHeadquartersLocalJurisdictionCode();
+            default -> "US";
+        };
+    }
+
     private LocalDate defaultDueDate(Integer taxYear, TaxFilingRecord.FilingType filingType, String filingPeriod) {
         String normalizedPeriod = filingPeriod.toUpperCase();
         return switch (filingType) {
-            case FORM_941, STATE_WITHHOLDING -> switch (normalizedPeriod) {
+            case FORM_941, STATE_WITHHOLDING, LOCAL_WITHHOLDING -> switch (normalizedPeriod) {
                 case "Q1" -> LocalDate.of(taxYear, Month.APRIL, 30);
                 case "Q2" -> LocalDate.of(taxYear, Month.JULY, 31);
                 case "Q3" -> LocalDate.of(taxYear, Month.OCTOBER, 31);

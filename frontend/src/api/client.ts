@@ -1,21 +1,32 @@
 import type {
+  CreateApiClientRequest,
   ConnectionSettings,
   CreateEmployeeRequest,
+  CreateWebhookRequest,
   CurrentUser,
   DashboardSummary,
   Employee,
+  FilingWorkflowRequest,
   GenerateFilingRequest,
+  JurisdictionTaxProfile,
+  PartnerApiClient,
   PayrollCalculationRequest,
   PayrollCalculationResult,
+  PayrollSummaryReport,
   PayrollRun,
   PayrollSchedule,
+  StartFilingWorkflowRequest,
   TaxFilingRecord,
+  TaxJurisdiction,
   TaxYearProfile,
+  WebhookDelivery,
+  WebhookEndpoint,
+  OrganizationProfile,
 } from './types'
 
 const API_BASE_PATH = '/api/v1'
 
-function authHeader({ username, password }: ConnectionSettings): string {
+function basicAuthHeader({ username, password }: ConnectionSettings): string {
   return `Basic ${btoa(`${username}:${password}`)}`
 }
 
@@ -28,7 +39,9 @@ async function request<T>(
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: authHeader(settings),
+      ...(settings.apiKey
+        ? { 'X-API-Key': settings.apiKey }
+        : { Authorization: basicAuthHeader(settings) }),
       ...(init.headers ?? {}),
     },
   })
@@ -53,6 +66,9 @@ async function request<T>(
 export const payrollApi = {
   currentUser: (settings: ConnectionSettings) =>
     request<CurrentUser>(settings, `${API_BASE_PATH}/security/me`),
+
+  currentOrganization: (settings: ConnectionSettings) =>
+    request<OrganizationProfile>(settings, `${API_BASE_PATH}/organizations/current`),
 
   dashboard: (settings: ConnectionSettings, organizationId: number) =>
     request<DashboardSummary>(
@@ -126,4 +142,79 @@ export const payrollApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  filingWorkflows: (settings: ConnectionSettings, organizationId: number) =>
+    request<FilingWorkflowRequest[]>(
+      settings,
+      `${API_BASE_PATH}/tax/workflows/filings?organizationId=${organizationId}`,
+    ),
+
+  startFilingWorkflow: (
+    settings: ConnectionSettings,
+    payload: StartFilingWorkflowRequest,
+  ) =>
+    request<FilingWorkflowRequest>(settings, `${API_BASE_PATH}/tax/workflows/filings`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  jurisdictions: (settings: ConnectionSettings) =>
+    request<TaxJurisdiction[]>(settings, `${API_BASE_PATH}/tax/jurisdictions`),
+
+  jurisdictionProfiles: (
+    settings: ConnectionSettings,
+    taxYear: number,
+    taxType: string,
+  ) =>
+    request<JurisdictionTaxProfile[]>(
+      settings,
+      `${API_BASE_PATH}/tax/jurisdiction-profiles?taxYear=${taxYear}&taxType=${taxType}`,
+    ),
+
+  payrollSummaryReport: (
+    settings: ConnectionSettings,
+    organizationId: number,
+    taxYear: number,
+  ) =>
+    request<PayrollSummaryReport>(
+      settings,
+      `${API_BASE_PATH}/reports/payroll-summary?organizationId=${organizationId}&taxYear=${taxYear}`,
+    ),
+
+  apiClients: (settings: ConnectionSettings, organizationId: number) =>
+    request<PartnerApiClient[]>(
+      settings,
+      `${API_BASE_PATH}/integration/api-clients?organizationId=${organizationId}`,
+    ),
+
+  createApiClient: (settings: ConnectionSettings, payload: CreateApiClientRequest) =>
+    request<PartnerApiClient>(settings, `${API_BASE_PATH}/integration/api-clients`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  webhooks: (settings: ConnectionSettings, organizationId: number) =>
+    request<WebhookEndpoint[]>(
+      settings,
+      `${API_BASE_PATH}/integration/webhooks?organizationId=${organizationId}`,
+    ),
+
+  createWebhook: (settings: ConnectionSettings, payload: CreateWebhookRequest) =>
+    request<WebhookEndpoint>(settings, `${API_BASE_PATH}/integration/webhooks`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  webhookDeliveries: (settings: ConnectionSettings, organizationId: number) =>
+    request<WebhookDelivery[]>(
+      settings,
+      `${API_BASE_PATH}/integration/webhook-deliveries?organizationId=${organizationId}`,
+    ),
+
+  dispatchWebhookDeliveries: (settings: ConnectionSettings) =>
+    request<{ processedCount: number }>(
+      settings,
+      `${API_BASE_PATH}/integration/webhook-deliveries/dispatch`,
+      { method: 'POST' },
+    ),
 }

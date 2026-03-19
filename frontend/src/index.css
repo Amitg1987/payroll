@@ -242,7 +242,7 @@ th {
 }
 
 .field-grid--compact {
-  grid-template-columns: 1.3fr 1fr 1fr;
+  grid-template-columns: 1.3fr 1fr 1fr 1.2fr;
 }
 
 .message {
@@ -373,6 +373,16 @@ th {
 .role-badge--approver {
   background: rgba(167, 139, 250, 0.16);
   color: #ddd6fe;
+}
+
+.role-badge--developer_platform_integrator {
+  background: rgba(244, 114, 182, 0.16);
+  color: #fbcfe8;
+}
+
+.role-badge--partner_api {
+  background: rgba(74, 222, 128, 0.16);
+  color: #bbf7d0;
 }
 
 .result-grid {

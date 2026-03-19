@@ -150,7 +150,14 @@ export function PayrollCalculator({
               <strong>State tax:</strong> {formatCurrency(result.stateIncomeTax)}
             </p>
             <p>
+              <strong>Local tax:</strong> {formatCurrency(result.localIncomeTax)}
+            </p>
+            <p>
               <strong>Employer FUTA:</strong> {formatCurrency(result.employerFutaTax)}
+            </p>
+            <p>
+              <strong>Employer SUTA:</strong>{' '}
+              {formatCurrency(result.employerStateUnemploymentTax)}
             </p>
           </div>
         </div>

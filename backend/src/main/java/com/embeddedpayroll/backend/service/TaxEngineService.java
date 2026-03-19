@@ -3,13 +3,16 @@ package com.embeddedpayroll.backend.service;
 import com.embeddedpayroll.backend.model.Employee;
 import com.embeddedpayroll.backend.model.EmployeeW4Profile;
 import com.embeddedpayroll.backend.model.FederalTaxBracket;
+import com.embeddedpayroll.backend.model.JurisdictionTaxProfile;
 import com.embeddedpayroll.backend.model.PayrollSchedule;
 import com.embeddedpayroll.backend.model.TaxYearProfile;
+import com.embeddedpayroll.backend.repository.JurisdictionTaxProfileRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunItemRepository;
 import com.embeddedpayroll.backend.repository.TaxYearProfileRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,7 @@ public class TaxEngineService {
 
     private final TaxYearProfileRepository taxYearProfileRepository;
     private final PayrollRunItemRepository payrollRunItemRepository;
+    private final JurisdictionTaxProfileRepository jurisdictionTaxProfileRepository;
 
     @Transactional(readOnly = true)
     public PayrollComputation calculate(
@@ -35,6 +39,10 @@ public class TaxEngineService {
         BigDecimal overtimeHours,
         BigDecimal preTaxDeductions
     ) {
+        if (employee.getWorkerType() != Employee.WorkerType.W2_EMPLOYEE) {
+            throw new IllegalArgumentException("Payroll engine currently supports W-2 employees only");
+        }
+
         TaxYearProfile taxYearProfile = getTaxYearProfile(taxYear);
         BigDecimal regularPay = calculateRegularPay(employee, frequency);
         BigDecimal overtimePay = calculateOvertimePay(employee, overtimeHours);
@@ -46,7 +54,22 @@ public class TaxEngineService {
         );
 
         BigDecimal federalIncomeTax = calculateFederalIncomeTax(taxYearProfile, w4Profile, frequency, taxableWages);
-        BigDecimal stateIncomeTax = money(taxableWages.multiply(nz(employee.getStateWithholdingRate())));
+        JurisdictionTaxProfile stateWithholdingProfile = jurisdictionTaxProfileRepository
+            .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
+                employee.getWorkState(),
+                taxYear,
+                JurisdictionTaxProfile.TaxType.STATE_WITHHOLDING
+            )
+            .orElse(null);
+
+        BigDecimal stateWithholdingRate = stateWithholdingProfile == null
+            ? nz(employee.getStateWithholdingRate())
+            : employee.getResidenceState().equalsIgnoreCase(employee.getWorkState())
+                ? nz(stateWithholdingProfile.getResidentRate())
+                : nz(stateWithholdingProfile.getNonResidentRate());
+        BigDecimal stateIncomeTax = money(taxableWages.multiply(stateWithholdingRate));
+
+        BigDecimal localIncomeTax = calculateLocalIncomeTax(employee, taxYear, taxableWages);
 
         BigDecimal socialSecurityTaxable = max(
             BigDecimal.ZERO,
@@ -83,12 +106,20 @@ public class TaxEngineService {
             futaTaxable.multiply(taxYearProfile.getFederalUnemploymentRate())
         );
 
+        BigDecimal employerStateUnemploymentTax = calculateEmployerStateUnemploymentTax(
+            employee,
+            taxYear,
+            taxableWages,
+            yearToDateGross
+        );
+
         BigDecimal employeeTaxTotal = money(
             federalIncomeTax
                 .add(socialSecurityEmployeeTax)
                 .add(medicareEmployeeTax)
                 .add(additionalMedicareEmployeeTax)
                 .add(stateIncomeTax)
+                .add(localIncomeTax)
         );
         BigDecimal netPay = money(grossPay.subtract(pretax).subtract(employeeTaxTotal));
 
@@ -108,10 +139,14 @@ public class TaxEngineService {
             medicareEmployeeTax,
             additionalMedicareEmployeeTax,
             stateIncomeTax,
+            localIncomeTax,
             employeeTaxTotal,
             socialSecurityEmployerTax,
             medicareEmployerTax,
             employerFutaTax,
+            employerStateUnemploymentTax,
+            stateWithholdingProfile == null ? employee.getWorkState() : stateWithholdingProfile.getTaxJurisdiction().getCode(),
+            effectiveLocalJurisdictionCode(employee),
             netPay
         );
     }
@@ -209,6 +244,65 @@ public class TaxEngineService {
         };
     }
 
+    private BigDecimal calculateLocalIncomeTax(Employee employee, Integer taxYear, BigDecimal taxableWages) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (String jurisdictionCode : localJurisdictionCodes(employee)) {
+            JurisdictionTaxProfile profile = jurisdictionTaxProfileRepository
+                .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
+                    jurisdictionCode,
+                    taxYear,
+                    JurisdictionTaxProfile.TaxType.LOCAL_WITHHOLDING
+                )
+                .orElse(null);
+            if (profile == null) {
+                continue;
+            }
+
+            boolean resident = jurisdictionCode.equalsIgnoreCase(employee.getResidenceLocalJurisdictionCode());
+            BigDecimal rate = resident ? nz(profile.getResidentRate()) : nz(profile.getNonResidentRate());
+            total = total.add(taxableWages.multiply(rate));
+        }
+        return money(total);
+    }
+
+    private BigDecimal calculateEmployerStateUnemploymentTax(
+        Employee employee,
+        Integer taxYear,
+        BigDecimal taxableWages,
+        BigDecimal yearToDateGross
+    ) {
+        JurisdictionTaxProfile profile = jurisdictionTaxProfileRepository
+            .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
+                employee.getWorkState(),
+                taxYear,
+                JurisdictionTaxProfile.TaxType.STATE_UNEMPLOYMENT
+            )
+            .orElse(null);
+        if (profile == null || nz(profile.getEmployerRate()).signum() == 0) {
+            return ZERO;
+        }
+
+        BigDecimal unemploymentTaxable = profile.getWageBase() == null
+            ? taxableWages
+            : max(BigDecimal.ZERO, profile.getWageBase().subtract(yearToDateGross)).min(taxableWages);
+        return money(unemploymentTaxable.multiply(nz(profile.getEmployerRate())));
+    }
+
+    private List<String> localJurisdictionCodes(Employee employee) {
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        if (employee.getWorkLocalJurisdictionCode() != null && !employee.getWorkLocalJurisdictionCode().isBlank()) {
+            codes.add(employee.getWorkLocalJurisdictionCode());
+        }
+        if (employee.getResidenceLocalJurisdictionCode() != null && !employee.getResidenceLocalJurisdictionCode().isBlank()) {
+            codes.add(employee.getResidenceLocalJurisdictionCode());
+        }
+        return List.copyOf(codes);
+    }
+
+    private String effectiveLocalJurisdictionCode(Employee employee) {
+        return localJurisdictionCodes(employee).stream().findFirst().orElse(null);
+    }
+
     private BigDecimal money(BigDecimal value) {
         return nz(value).setScale(2, RoundingMode.HALF_UP);
     }
@@ -237,10 +331,14 @@ public class TaxEngineService {
         BigDecimal medicareEmployeeTax,
         BigDecimal additionalMedicareEmployeeTax,
         BigDecimal stateIncomeTax,
+        BigDecimal localIncomeTax,
         BigDecimal employeeTaxTotal,
         BigDecimal employerSocialSecurityTax,
         BigDecimal employerMedicareTax,
         BigDecimal employerFutaTax,
+        BigDecimal employerStateUnemploymentTax,
+        String stateJurisdictionCode,
+        String localJurisdictionCode,
         BigDecimal netPay
     ) {
     }

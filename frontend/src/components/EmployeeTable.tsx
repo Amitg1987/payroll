@@ -14,7 +14,7 @@ export function EmployeeTable({ employees }: EmployeeTableProps) {
             <th>Employee</th>
             <th>Department</th>
             <th>Compensation</th>
-            <th>State</th>
+            <th>Jurisdictions</th>
             <th>W-4 Profile</th>
             <th>Hire Date</th>
           </tr>
@@ -39,10 +39,16 @@ export function EmployeeTable({ employees }: EmployeeTableProps) {
                   ? formatCurrency(employee.annualSalary)
                   : `${formatCurrency(employee.hourlyRate)} / hour`}
                 <span className="table-meta">
-                  {formatPercent(employee.stateWithholdingRate)} state withholding
+                  {titleCase(employee.workerType)} • {formatPercent(employee.stateWithholdingRate)} state withholding
                 </span>
               </td>
-              <td>{employee.workState}</td>
+              <td>
+                Work {employee.workState} / Home {employee.residenceState}
+                <span className="table-meta">
+                  Local {employee.workLocalJurisdictionCode ?? 'n/a'} /{' '}
+                  {employee.residenceLocalJurisdictionCode ?? 'n/a'}
+                </span>
+              </td>
               <td>
                 {employee.w4Profile ? titleCase(employee.w4Profile.filingStatus) : 'Missing W-4'}
                 <span className="table-meta">

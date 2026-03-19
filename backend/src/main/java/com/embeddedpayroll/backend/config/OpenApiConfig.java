@@ -28,8 +28,12 @@ public class OpenApiConfig {
             .components(new Components().addSecuritySchemes(
                 "basicAuth",
                 new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("basic")
+            ).addSecuritySchemes(
+                "apiKeyAuth",
+                new SecurityScheme().type(SecurityScheme.Type.APIKEY).in(SecurityScheme.In.HEADER).name("X-API-Key")
             ))
-            .addSecurityItem(new SecurityRequirement().addList("basicAuth"));
+            .addSecurityItem(new SecurityRequirement().addList("basicAuth"))
+            .addSecurityItem(new SecurityRequirement().addList("apiKeyAuth"));
     }
 
     @Bean

@@ -29,10 +29,14 @@ public final class EmployeeDtos {
             employee.getHireDate(),
             employee.getEmploymentStatus(),
             employee.getCompensationType(),
+            employee.getWorkerType(),
             employee.getAnnualSalary(),
             employee.getHourlyRate(),
             employee.getStandardHoursPerPeriod(),
             employee.getStateWithholdingRate(),
+            employee.getResidenceState(),
+            employee.getWorkLocalJurisdictionCode(),
+            employee.getResidenceLocalJurisdictionCode(),
             fromEntity(w4Profile)
         );
     }
@@ -66,6 +70,9 @@ public final class EmployeeDtos {
         @NotNull Employee.CompensationType compensationType,
         @NotBlank String department,
         @NotBlank String workState,
+        @NotBlank String residenceState,
+        String workLocalJurisdictionCode,
+        String residenceLocalJurisdictionCode,
         @DecimalMin("0.0") BigDecimal annualSalary,
         @DecimalMin("0.0") BigDecimal hourlyRate,
         @NotNull @DecimalMin("0.0") BigDecimal standardHoursPerPeriod,
@@ -99,10 +106,14 @@ public final class EmployeeDtos {
         LocalDate hireDate,
         Employee.EmploymentStatus employmentStatus,
         Employee.CompensationType compensationType,
+        Employee.WorkerType workerType,
         BigDecimal annualSalary,
         BigDecimal hourlyRate,
         BigDecimal standardHoursPerPeriod,
         BigDecimal stateWithholdingRate,
+        String residenceState,
+        String workLocalJurisdictionCode,
+        String residenceLocalJurisdictionCode,
         W4Response w4Profile
     ) {
     }

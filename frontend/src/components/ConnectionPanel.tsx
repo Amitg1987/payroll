@@ -45,6 +45,16 @@ export function ConnectionPanel({
             }
           />
         </label>
+        <label>
+          API key (optional)
+          <input
+            value={settings.apiKey}
+            onChange={(event) =>
+              onChange({ ...settings, apiKey: event.target.value })
+            }
+            placeholder="pk_live_..."
+          />
+        </label>
       </div>
       <div className="connection-panel__actions">
         <button type="button" onClick={onConnect} disabled={loading}>
@@ -52,7 +62,9 @@ export function ConnectionPanel({
         </button>
         <p className="muted">
           Demo users: admin / Admin@123, accountant / Accountant@123, approver / Approver@123.
-          Partner docs are available at /swagger-ui.html on the backend host.
+          Integrator: integrator / Integrator@123. Demo API key:
+          pk_live_demo_embedded_payroll_partner_2026. Partner docs are available
+          at /swagger-ui.html on the backend host.
         </p>
       </div>
     </div>

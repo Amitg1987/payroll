@@ -11,6 +11,8 @@ public interface PayrollRunItemRepository extends JpaRepository<PayrollRunItem, 
 
     List<PayrollRunItem> findByPayrollRunIdOrderByEmployeeLastNameAscEmployeeFirstNameAsc(Long payrollRunId);
 
+    List<PayrollRunItem> findByPayrollRunPayrollScheduleOrganizationIdAndTaxYear(Long organizationId, Integer taxYear);
+
     @Query("""
         select coalesce(sum(item.grossPay), 0)
         from PayrollRunItem item

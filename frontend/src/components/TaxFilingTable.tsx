@@ -20,6 +20,7 @@ const filingTypes: FilingType[] = [
   'FORM_W2',
   'FORM_W3',
   'STATE_WITHHOLDING',
+  'LOCAL_WITHHOLDING',
 ]
 
 export function TaxFilingTable({

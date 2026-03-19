@@ -35,6 +35,9 @@ public class TaxFilingRecord extends BaseEntity {
     @Column(nullable = false, length = 20)
     private String filingPeriod;
 
+    @Column(nullable = false, length = 32)
+    private String filingJurisdictionCode = "US";
+
     @Column(nullable = false)
     private LocalDate dueDate;
 
@@ -56,12 +59,19 @@ public class TaxFilingRecord extends BaseEntity {
     @Column(length = 80)
     private String referenceNumber;
 
+    @Column(length = 120)
+    private String temporalWorkflowId;
+
+    @Column(length = 120)
+    private String temporalRunId;
+
     public enum FilingType {
         FORM_941,
         FORM_940,
         FORM_W2,
         FORM_W3,
-        STATE_WITHHOLDING
+        STATE_WITHHOLDING,
+        LOCAL_WITHHOLDING
     }
 
     public enum RecordStatus {
