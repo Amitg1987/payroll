@@ -553,7 +553,8 @@ function App() {
           <p className="hero-copy">
             Spring Boot APIs and React UI components for company jurisdictions,
             W-2 gross-to-net payroll, 50-state and local tax support, partner API
-            keys, webhooks, idempotent integration writes, and Temporal-backed tax
+            keys, webhooks, idempotent integration writes, multi-state employee
+            withholding rules, YTD wage-base tracking, and Temporal-backed tax
             filing workflows.
           </p>
         </div>
@@ -916,7 +917,7 @@ function App() {
       <div className="page-grid">
         <SectionCard
           title="Scheduled payroll processing"
-          subtitle="Multi-model payroll writes remain atomic while runs, line items, and webhook events are persisted."
+          subtitle="Multi-model payroll writes remain atomic while runs, per-location allocations, YTD accumulators, and webhook events are persisted."
         >
           <div className="schedule-list">
             {schedules.map((schedule) => (
@@ -946,7 +947,7 @@ function App() {
 
         <SectionCard
           title="Tax coverage and jurisdiction catalogue"
-          subtitle="Federal rules plus seeded state and local jurisdiction records drive the versioned tax engine."
+          subtitle="Federal rules plus seeded state/local jurisdiction records drive reciprocity checks, resident credit offsets, and YTD wage-base enforcement."
         >
           <div className="tax-year-selector">
             <label>

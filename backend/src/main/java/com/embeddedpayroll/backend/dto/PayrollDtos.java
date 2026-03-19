@@ -3,6 +3,7 @@ package com.embeddedpayroll.backend.dto;
 import com.embeddedpayroll.backend.model.EmployeeW4Profile;
 import com.embeddedpayroll.backend.model.PayrollRun;
 import com.embeddedpayroll.backend.model.PayrollRunItem;
+import com.embeddedpayroll.backend.model.PayrollRunItemAllocation;
 import com.embeddedpayroll.backend.model.PayrollSchedule;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -48,7 +49,10 @@ public final class PayrollDtos {
         );
     }
 
-    public static PayrollLineResponse fromEntity(PayrollRunItem item) {
+    public static PayrollLineResponse fromEntity(
+        PayrollRunItem item,
+        List<WorkLocationAllocationResponse> allocations
+    ) {
         return new PayrollLineResponse(
             item.getEmployee().getId(),
             item.getEmployee().getEmployeeNumber(),
@@ -64,15 +68,39 @@ public final class PayrollDtos {
             item.getMedicareEmployeeTax(),
             item.getAdditionalMedicareEmployeeTax(),
             item.getStateIncomeTax(),
+            item.getWorkStateIncomeTax(),
+            item.getResidentStateIncomeTax(),
+            item.getResidentStateCreditOffset(),
             item.getLocalIncomeTax(),
             item.getEmployeeTaxTotal(),
             item.getEmployerSocialSecurityTax(),
             item.getEmployerMedicareTax(),
             item.getEmployerFutaTax(),
             item.getEmployerStateUnemploymentTax(),
+            item.getSocialSecurityTaxableWages(),
+            item.getFederalUnemploymentTaxableWages(),
+            item.getStateUnemploymentTaxableWages(),
             item.getStateJurisdictionCode(),
             item.getLocalJurisdictionCode(),
+            item.getResidentStateJurisdictionCode(),
+            allocations,
             item.getNetPay()
+        );
+    }
+
+    public static WorkLocationAllocationResponse fromEntity(PayrollRunItemAllocation allocation) {
+        return new WorkLocationAllocationResponse(
+            allocation.getStateJurisdictionCode(),
+            allocation.getLocalJurisdictionCode(),
+            allocation.getAllocationPercentage(),
+            allocation.getAllocatedGrossWages(),
+            allocation.getAllocatedTaxableWages(),
+            allocation.getWorkStateIncomeTax(),
+            allocation.getLocalIncomeTax(),
+            allocation.getStateUnemploymentTaxableWages(),
+            allocation.getEmployerStateUnemploymentTax(),
+            allocation.getResidentStateCreditApplied(),
+            allocation.isReciprocityApplied()
         );
     }
 
@@ -96,7 +124,8 @@ public final class PayrollDtos {
         @NotNull Long employeeId,
         @NotNull @DecimalMin("0.0") BigDecimal bonusPay,
         @NotNull @DecimalMin("0.0") BigDecimal overtimeHours,
-        @NotNull @DecimalMin("0.0") BigDecimal preTaxDeductions
+        @NotNull @DecimalMin("0.0") BigDecimal preTaxDeductions,
+        List<WorkLocationAllocationRequest> workLocationAllocations
     ) {
     }
 
@@ -106,7 +135,15 @@ public final class PayrollDtos {
         @NotNull PayrollSchedule.PayrollFrequency frequency,
         @NotNull @DecimalMin("0.0") BigDecimal bonusPay,
         @NotNull @DecimalMin("0.0") BigDecimal overtimeHours,
-        @NotNull @DecimalMin("0.0") BigDecimal preTaxDeductions
+        @NotNull @DecimalMin("0.0") BigDecimal preTaxDeductions,
+        List<WorkLocationAllocationRequest> workLocationAllocations
+    ) {
+    }
+
+    public record WorkLocationAllocationRequest(
+        @NotBlank String stateJurisdictionCode,
+        String localJurisdictionCode,
+        @NotNull @DecimalMin("0.0") BigDecimal allocationPercentage
     ) {
     }
 
@@ -155,14 +192,22 @@ public final class PayrollDtos {
         BigDecimal medicareEmployeeTax,
         BigDecimal additionalMedicareEmployeeTax,
         BigDecimal stateIncomeTax,
+        BigDecimal workStateIncomeTax,
+        BigDecimal residentStateIncomeTax,
+        BigDecimal residentStateCreditOffset,
         BigDecimal localIncomeTax,
         BigDecimal employeeTaxTotal,
         BigDecimal employerSocialSecurityTax,
         BigDecimal employerMedicareTax,
         BigDecimal employerFutaTax,
         BigDecimal employerStateUnemploymentTax,
+        BigDecimal socialSecurityTaxableWages,
+        BigDecimal federalUnemploymentTaxableWages,
+        BigDecimal stateUnemploymentTaxableWages,
         String stateJurisdictionCode,
         String localJurisdictionCode,
+        String residentStateJurisdictionCode,
+        List<WorkLocationAllocationResponse> allocations,
         BigDecimal netPay
     ) {
     }
@@ -179,13 +224,36 @@ public final class PayrollDtos {
         BigDecimal medicareEmployeeTax,
         BigDecimal additionalMedicareEmployeeTax,
         BigDecimal stateIncomeTax,
+        BigDecimal workStateIncomeTax,
+        BigDecimal residentStateIncomeTax,
+        BigDecimal residentStateCreditOffset,
         BigDecimal localIncomeTax,
         BigDecimal employeeTaxTotal,
         BigDecimal employerSocialSecurityTax,
         BigDecimal employerMedicareTax,
         BigDecimal employerFutaTax,
         BigDecimal employerStateUnemploymentTax,
+        BigDecimal socialSecurityTaxableWages,
+        BigDecimal federalUnemploymentTaxableWages,
+        BigDecimal stateUnemploymentTaxableWages,
+        String residentStateJurisdictionCode,
+        List<WorkLocationAllocationResponse> allocations,
         BigDecimal netPay
+    ) {
+    }
+
+    public record WorkLocationAllocationResponse(
+        String stateJurisdictionCode,
+        String localJurisdictionCode,
+        BigDecimal allocationPercentage,
+        BigDecimal allocatedGrossWages,
+        BigDecimal allocatedTaxableWages,
+        BigDecimal workStateIncomeTax,
+        BigDecimal localIncomeTax,
+        BigDecimal stateUnemploymentTaxableWages,
+        BigDecimal employerStateUnemploymentTax,
+        BigDecimal residentStateCreditApplied,
+        boolean reciprocityApplied
     ) {
     }
 }

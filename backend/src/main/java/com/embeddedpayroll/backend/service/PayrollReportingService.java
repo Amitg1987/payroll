@@ -2,11 +2,12 @@ package com.embeddedpayroll.backend.service;
 
 import com.embeddedpayroll.backend.dto.ReportDtos;
 import com.embeddedpayroll.backend.model.PayrollRunItem;
+import com.embeddedpayroll.backend.model.PayrollRunItemAllocation;
+import com.embeddedpayroll.backend.repository.PayrollRunItemAllocationRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunItemRepository;
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PayrollReportingService {
 
     private final PayrollRunItemRepository payrollRunItemRepository;
+    private final PayrollRunItemAllocationRepository payrollRunItemAllocationRepository;
 
     @Transactional(readOnly = true)
     public ReportDtos.PayrollSummaryReportResponse payrollSummary(Long organizationId, Integer taxYear) {
@@ -41,27 +43,47 @@ public class PayrollReportingService {
             .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal netTotal = sum(items, PayrollRunItem::getNetPay);
 
-        List<ReportDtos.JurisdictionSummary> stateSummaries = items.stream()
-            .collect(java.util.stream.Collectors.groupingBy(
-                item -> item.getStateJurisdictionCode() == null ? "UNSPECIFIED" : item.getStateJurisdictionCode()
-            ))
-            .entrySet()
-            .stream()
-            .map(entry -> {
-                List<PayrollRunItem> groupItems = entry.getValue();
-                return new ReportDtos.JurisdictionSummary(
-                    entry.getKey(),
-                    sum(groupItems, PayrollRunItem::getGrossPay),
-                    sum(groupItems, PayrollRunItem::getEmployeeTaxTotal),
-                    groupItems.stream()
-                        .map(item -> item.getEmployerSocialSecurityTax()
-                            .add(item.getEmployerMedicareTax())
-                            .add(item.getEmployerFutaTax())
-                            .add(item.getEmployerStateUnemploymentTax()))
-                        .reduce(BigDecimal.ZERO, BigDecimal::add),
-                    sum(groupItems, PayrollRunItem::getNetPay)
+        List<PayrollRunItemAllocation> allocations = items.stream()
+            .flatMap(item -> payrollRunItemAllocationRepository
+                .findByPayrollRunItemIdOrderByStateJurisdictionCodeAscLocalJurisdictionCodeAsc(item.getId())
+                .stream())
+            .toList();
+
+        java.util.Map<String, MutableJurisdictionSummary> stateSummaryMap = new java.util.LinkedHashMap<>();
+
+        for (PayrollRunItem item : items) {
+            if (item.getResidentStateJurisdictionCode() != null && item.getResidentStateIncomeTax().signum() > 0) {
+                MutableJurisdictionSummary summary = stateSummaryMap.computeIfAbsent(
+                    item.getResidentStateJurisdictionCode(),
+                    ignored -> new MutableJurisdictionSummary()
                 );
-            })
+                summary.grossTotal = summary.grossTotal.add(item.getGrossPay());
+                summary.employeeTaxTotal = summary.employeeTaxTotal.add(item.getResidentStateIncomeTax());
+                summary.netTotal = summary.netTotal.add(item.getNetPay());
+            }
+        }
+
+        for (PayrollRunItemAllocation allocation : allocations) {
+            MutableJurisdictionSummary summary = stateSummaryMap.computeIfAbsent(
+                allocation.getStateJurisdictionCode(),
+                ignored -> new MutableJurisdictionSummary()
+            );
+            summary.grossTotal = summary.grossTotal.add(allocation.getAllocatedGrossWages());
+            summary.employeeTaxTotal = summary.employeeTaxTotal
+                .add(allocation.getWorkStateIncomeTax())
+                .add(allocation.getLocalIncomeTax());
+            summary.employerTaxTotal = summary.employerTaxTotal.add(allocation.getEmployerStateUnemploymentTax());
+        }
+
+        List<ReportDtos.JurisdictionSummary> stateSummaries = stateSummaryMap.entrySet()
+            .stream()
+            .map(entry -> new ReportDtos.JurisdictionSummary(
+                entry.getKey(),
+                entry.getValue().grossTotal,
+                entry.getValue().employeeTaxTotal,
+                entry.getValue().employerTaxTotal,
+                entry.getValue().netTotal
+            ))
             .sorted(Comparator.comparing(ReportDtos.JurisdictionSummary::jurisdictionCode))
             .toList();
 
@@ -80,5 +102,12 @@ public class PayrollReportingService {
 
     private BigDecimal sum(List<PayrollRunItem> items, java.util.function.Function<PayrollRunItem, BigDecimal> mapper) {
         return items.stream().map(mapper).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static final class MutableJurisdictionSummary {
+        private BigDecimal grossTotal = BigDecimal.ZERO;
+        private BigDecimal employeeTaxTotal = BigDecimal.ZERO;
+        private BigDecimal employerTaxTotal = BigDecimal.ZERO;
+        private BigDecimal netTotal = BigDecimal.ZERO;
     }
 }

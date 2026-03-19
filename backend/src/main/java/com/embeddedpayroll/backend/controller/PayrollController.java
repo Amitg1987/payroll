@@ -135,12 +135,34 @@ public class PayrollController {
             computation.medicareEmployeeTax(),
             computation.additionalMedicareEmployeeTax(),
             computation.stateIncomeTax(),
+            computation.workStateIncomeTax(),
+            computation.residentStateIncomeTax(),
+            computation.residentStateCreditOffset(),
             computation.localIncomeTax(),
             computation.employeeTaxTotal(),
             computation.employerSocialSecurityTax(),
             computation.employerMedicareTax(),
             computation.employerFutaTax(),
             computation.employerStateUnemploymentTax(),
+            computation.socialSecurityTaxableWages(),
+            computation.federalUnemploymentTaxableWages(),
+            computation.stateUnemploymentTaxableWages(),
+            computation.residentStateJurisdictionCode(),
+            computation.workLocationAccumulators().stream()
+                .map(allocation -> new PayrollDtos.WorkLocationAllocationResponse(
+                    allocation.stateJurisdictionCode(),
+                    allocation.localJurisdictionCode(),
+                    allocation.allocationPercentage(),
+                    allocation.allocatedGrossWages(),
+                    allocation.allocatedTaxableWages(),
+                    allocation.workStateIncomeTax(),
+                    allocation.localIncomeTax(),
+                    allocation.stateUnemploymentTaxableWages(),
+                    allocation.employerStateUnemploymentTax(),
+                    allocation.residentStateCreditApplied(),
+                    allocation.reciprocityApplied()
+                ))
+                .toList(),
             computation.netPay()
         );
     }
@@ -149,7 +171,14 @@ public class PayrollController {
         var run = payrollService.getRun(runId);
         return PayrollDtos.fromEntity(
             run,
-            payrollService.listRunItems(runId).stream().map(PayrollDtos::fromEntity).toList()
+            payrollService.listRunItems(runId).stream()
+                .map(item -> PayrollDtos.fromEntity(
+                    item,
+                    payrollService.listItemAllocations(item.getId()).stream()
+                        .map(PayrollDtos::fromEntity)
+                        .toList()
+                ))
+                .toList()
         );
     }
 }

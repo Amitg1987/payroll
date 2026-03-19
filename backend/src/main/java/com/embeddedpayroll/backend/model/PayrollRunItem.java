@@ -59,6 +59,15 @@ public class PayrollRunItem extends BaseEntity {
     private BigDecimal stateIncomeTax = BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 14, scale = 2)
+    private BigDecimal workStateIncomeTax = BigDecimal.ZERO;
+
+    @Column(nullable = false, precision = 14, scale = 2)
+    private BigDecimal residentStateIncomeTax = BigDecimal.ZERO;
+
+    @Column(nullable = false, precision = 14, scale = 2)
+    private BigDecimal residentStateCreditOffset = BigDecimal.ZERO;
+
+    @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal localIncomeTax = BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 14, scale = 2)
@@ -76,11 +85,23 @@ public class PayrollRunItem extends BaseEntity {
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal employerStateUnemploymentTax = BigDecimal.ZERO;
 
+    @Column(nullable = false, precision = 14, scale = 2)
+    private BigDecimal socialSecurityTaxableWages = BigDecimal.ZERO;
+
+    @Column(nullable = false, precision = 14, scale = 2)
+    private BigDecimal federalUnemploymentTaxableWages = BigDecimal.ZERO;
+
+    @Column(nullable = false, precision = 14, scale = 2)
+    private BigDecimal stateUnemploymentTaxableWages = BigDecimal.ZERO;
+
     @Column(length = 32)
     private String stateJurisdictionCode;
 
     @Column(length = 32)
     private String localJurisdictionCode;
+
+    @Column(length = 32)
+    private String residentStateJurisdictionCode;
 
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal netPay = BigDecimal.ZERO;

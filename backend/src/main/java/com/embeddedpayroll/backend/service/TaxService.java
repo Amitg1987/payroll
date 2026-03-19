@@ -5,11 +5,13 @@ import com.embeddedpayroll.backend.model.JurisdictionTaxProfile;
 import com.embeddedpayroll.backend.model.Organization;
 import com.embeddedpayroll.backend.model.PayrollRun;
 import com.embeddedpayroll.backend.model.PayrollRunItem;
+import com.embeddedpayroll.backend.model.PayrollRunItemAllocation;
 import com.embeddedpayroll.backend.model.TaxFilingRecord;
 import com.embeddedpayroll.backend.model.TaxJurisdiction;
 import com.embeddedpayroll.backend.model.TaxYearProfile;
 import com.embeddedpayroll.backend.repository.JurisdictionTaxProfileRepository;
 import com.embeddedpayroll.backend.repository.OrganizationRepository;
+import com.embeddedpayroll.backend.repository.PayrollRunItemAllocationRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunItemRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunRepository;
 import com.embeddedpayroll.backend.repository.TaxFilingRecordRepository;
@@ -32,6 +34,7 @@ public class TaxService {
     private final OrganizationRepository organizationRepository;
     private final PayrollRunRepository payrollRunRepository;
     private final PayrollRunItemRepository payrollRunItemRepository;
+    private final PayrollRunItemAllocationRepository payrollRunItemAllocationRepository;
     private final TaxFilingRecordRepository taxFilingRecordRepository;
     private final TaxJurisdictionRepository taxJurisdictionRepository;
     private final JurisdictionTaxProfileRepository jurisdictionTaxProfileRepository;
@@ -88,12 +91,18 @@ public class TaxService {
             .flatMap(run -> payrollRunItemRepository.findByPayrollRunIdOrderByEmployeeLastNameAscEmployeeFirstNameAsc(
                 run.getId()
             ).stream())
-            .filter(item -> includeForJurisdiction(item, request))
+            .toList();
+        List<PayrollRunItemAllocation> allocations = items.stream()
+            .flatMap(item -> payrollRunItemAllocationRepository
+                .findByPayrollRunItemIdOrderByStateJurisdictionCodeAscLocalJurisdictionCodeAsc(item.getId())
+                .stream())
             .toList();
 
-        BigDecimal totalWages = items.stream()
-            .map(PayrollRunItem::getGrossPay)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalWages = switch (request.filingType()) {
+            case STATE_WITHHOLDING -> totalStateFilingWages(items, allocations, resolveFilingJurisdictionCode(request, organization));
+            case LOCAL_WITHHOLDING -> totalLocalFilingWages(allocations, resolveFilingJurisdictionCode(request, organization));
+            default -> items.stream().map(PayrollRunItem::getGrossPay).reduce(BigDecimal.ZERO, BigDecimal::add);
+        };
         BigDecimal totalTax = switch (request.filingType()) {
             case FORM_941 -> items.stream()
                 .map(item -> item.getFederalIncomeTax()
@@ -114,10 +123,11 @@ public class TaxService {
                     .add(item.getMedicareEmployeeTax())
                     .add(item.getAdditionalMedicareEmployeeTax()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-            case LOCAL_WITHHOLDING -> items.stream()
-                .map(PayrollRunItem::getLocalIncomeTax)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            case LOCAL_WITHHOLDING -> totalLocalFilingTax(allocations, resolveFilingJurisdictionCode(request, organization));
         };
+        if (request.filingType() == TaxFilingRecord.FilingType.STATE_WITHHOLDING) {
+            totalTax = totalStateFilingTax(items, allocations, resolveFilingJurisdictionCode(request, organization));
+        }
 
         TaxFilingRecord filingRecord = taxFilingRecordRepository.findByOrganizationIdAndTaxYearOrderByDueDateAsc(
             request.organizationId(),
@@ -159,17 +169,6 @@ public class TaxService {
         );
     }
 
-    private boolean includeForJurisdiction(PayrollRunItem item, TaxDtos.GenerateFilingRequest request) {
-        if (request.filingJurisdictionCode() == null || request.filingJurisdictionCode().isBlank()) {
-            return true;
-        }
-        return switch (request.filingType()) {
-            case STATE_WITHHOLDING -> request.filingJurisdictionCode().equalsIgnoreCase(item.getStateJurisdictionCode());
-            case LOCAL_WITHHOLDING -> request.filingJurisdictionCode().equalsIgnoreCase(item.getLocalJurisdictionCode());
-            default -> true;
-        };
-    }
-
     private String resolveFilingJurisdictionCode(TaxDtos.GenerateFilingRequest request, Organization organization) {
         if (request.filingJurisdictionCode() != null && !request.filingJurisdictionCode().isBlank()) {
             return request.filingJurisdictionCode();
@@ -195,6 +194,59 @@ public class TaxService {
             };
             case FORM_940, FORM_W2, FORM_W3 -> LocalDate.of(taxYear + 1, Month.JANUARY, 31);
         };
+    }
+
+    private BigDecimal totalStateFilingWages(
+        List<PayrollRunItem> items,
+        List<PayrollRunItemAllocation> allocations,
+        String jurisdictionCode
+    ) {
+        BigDecimal residentWages = items.stream()
+            .filter(item -> jurisdictionCode.equalsIgnoreCase(item.getResidentStateJurisdictionCode()))
+            .map(PayrollRunItem::getTaxableWages)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal workStateWages = allocations.stream()
+            .filter(allocation -> jurisdictionCode.equalsIgnoreCase(allocation.getStateJurisdictionCode()))
+            .filter(allocation -> allocation.getWorkStateIncomeTax().signum() > 0)
+            .map(PayrollRunItemAllocation::getAllocatedTaxableWages)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return residentWages.add(workStateWages);
+    }
+
+    private BigDecimal totalStateFilingTax(
+        List<PayrollRunItem> items,
+        List<PayrollRunItemAllocation> allocations,
+        String jurisdictionCode
+    ) {
+        BigDecimal residentTax = items.stream()
+            .filter(item -> jurisdictionCode.equalsIgnoreCase(item.getResidentStateJurisdictionCode()))
+            .map(PayrollRunItem::getResidentStateIncomeTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal workStateTax = allocations.stream()
+            .filter(allocation -> jurisdictionCode.equalsIgnoreCase(allocation.getStateJurisdictionCode()))
+            .map(PayrollRunItemAllocation::getWorkStateIncomeTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return residentTax.add(workStateTax);
+    }
+
+    private BigDecimal totalLocalFilingWages(
+        List<PayrollRunItemAllocation> allocations,
+        String jurisdictionCode
+    ) {
+        return allocations.stream()
+            .filter(allocation -> jurisdictionCode.equalsIgnoreCase(allocation.getLocalJurisdictionCode()))
+            .map(PayrollRunItemAllocation::getAllocatedTaxableWages)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal totalLocalFilingTax(
+        List<PayrollRunItemAllocation> allocations,
+        String jurisdictionCode
+    ) {
+        return allocations.stream()
+            .filter(allocation -> jurisdictionCode.equalsIgnoreCase(allocation.getLocalJurisdictionCode()))
+            .map(PayrollRunItemAllocation::getLocalIncomeTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private DateRange resolvePeriodRange(Integer taxYear, String filingPeriod) {

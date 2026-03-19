@@ -1,18 +1,22 @@
 package com.embeddedpayroll.backend.service;
 
 import com.embeddedpayroll.backend.model.Employee;
+import com.embeddedpayroll.backend.model.EmployeeTaxAccumulator;
 import com.embeddedpayroll.backend.model.EmployeeW4Profile;
 import com.embeddedpayroll.backend.model.FederalTaxBracket;
 import com.embeddedpayroll.backend.model.JurisdictionTaxProfile;
 import com.embeddedpayroll.backend.model.PayrollSchedule;
+import com.embeddedpayroll.backend.model.StateReciprocityAgreement;
 import com.embeddedpayroll.backend.model.TaxYearProfile;
+import com.embeddedpayroll.backend.repository.EmployeeTaxAccumulatorRepository;
 import com.embeddedpayroll.backend.repository.JurisdictionTaxProfileRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunItemRepository;
+import com.embeddedpayroll.backend.repository.StateReciprocityAgreementRepository;
 import com.embeddedpayroll.backend.repository.TaxYearProfileRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import com.embeddedpayroll.backend.dto.PayrollDtos;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,10 +28,13 @@ public class TaxEngineService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final BigDecimal OVERTIME_MULTIPLIER = new BigDecimal("1.50");
+    private static final BigDecimal HUNDRED_PERCENT = new BigDecimal("1.0000");
 
     private final TaxYearProfileRepository taxYearProfileRepository;
     private final PayrollRunItemRepository payrollRunItemRepository;
     private final JurisdictionTaxProfileRepository jurisdictionTaxProfileRepository;
+    private final StateReciprocityAgreementRepository stateReciprocityAgreementRepository;
+    private final EmployeeTaxAccumulatorRepository employeeTaxAccumulatorRepository;
 
     @Transactional(readOnly = true)
     public PayrollComputation calculate(
@@ -37,7 +44,8 @@ public class TaxEngineService {
         PayrollSchedule.PayrollFrequency frequency,
         BigDecimal bonusPay,
         BigDecimal overtimeHours,
-        BigDecimal preTaxDeductions
+        BigDecimal preTaxDeductions,
+        List<PayrollDtos.WorkLocationAllocationRequest> workLocationAllocations
     ) {
         if (employee.getWorkerType() != Employee.WorkerType.W2_EMPLOYEE) {
             throw new IllegalArgumentException("Payroll engine currently supports W-2 employees only");
@@ -49,32 +57,32 @@ public class TaxEngineService {
         BigDecimal grossPay = money(regularPay.add(nz(bonusPay)).add(overtimePay));
         BigDecimal pretax = money(nz(preTaxDeductions));
         BigDecimal taxableWages = money(max(grossPay.subtract(pretax), BigDecimal.ZERO));
-        BigDecimal yearToDateGross = money(
-            payrollRunItemRepository.sumGrossPayForEmployeeAndTaxYear(employee.getId(), taxYear)
+        List<ResolvedWorkLocationAllocation> resolvedAllocations = resolveAllocations(
+            employee,
+            grossPay,
+            taxableWages,
+            workLocationAllocations
         );
 
         BigDecimal federalIncomeTax = calculateFederalIncomeTax(taxYearProfile, w4Profile, frequency, taxableWages);
-        JurisdictionTaxProfile stateWithholdingProfile = jurisdictionTaxProfileRepository
-            .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
-                employee.getWorkState(),
-                taxYear,
-                JurisdictionTaxProfile.TaxType.STATE_WITHHOLDING
-            )
-            .orElse(null);
+        StateTaxComputation stateTaxComputation = calculateStateTaxes(
+            employee,
+            taxYear,
+            taxableWages,
+            resolvedAllocations
+        );
 
-        BigDecimal stateWithholdingRate = stateWithholdingProfile == null
-            ? nz(employee.getStateWithholdingRate())
-            : employee.getResidenceState().equalsIgnoreCase(employee.getWorkState())
-                ? nz(stateWithholdingProfile.getResidentRate())
-                : nz(stateWithholdingProfile.getNonResidentRate());
-        BigDecimal stateIncomeTax = money(taxableWages.multiply(stateWithholdingRate));
-
-        BigDecimal localIncomeTax = calculateLocalIncomeTax(employee, taxYear, taxableWages);
-
-        BigDecimal socialSecurityTaxable = max(
-            BigDecimal.ZERO,
-            taxYearProfile.getSocialSecurityWageBase().subtract(yearToDateGross)
-        ).min(taxableWages);
+        BigDecimal ytdSocialSecurityWages = ytdTaxableWages(
+            employee.getId(),
+            taxYear,
+            EmployeeTaxAccumulator.TaxCode.SOCIAL_SECURITY,
+            "US"
+        );
+        BigDecimal socialSecurityTaxable = remainingWageBase(
+            taxYearProfile.getSocialSecurityWageBase(),
+            ytdSocialSecurityWages,
+            taxableWages
+        );
         BigDecimal socialSecurityEmployeeTax = money(
             socialSecurityTaxable.multiply(taxYearProfile.getSocialSecurityEmployeeRate())
         );
@@ -89,8 +97,14 @@ public class TaxEngineService {
             taxableWages.multiply(taxYearProfile.getMedicareEmployerRate())
         );
 
+        BigDecimal ytdMedicareWages = ytdTaxableWages(
+            employee.getId(),
+            taxYear,
+            EmployeeTaxAccumulator.TaxCode.MEDICARE,
+            "US"
+        );
         BigDecimal additionalMedicareTaxable = additionalMedicareTaxable(
-            yearToDateGross,
+            ytdMedicareWages,
             taxableWages,
             taxYearProfile.getAdditionalMedicareThreshold()
         );
@@ -98,19 +112,25 @@ public class TaxEngineService {
             additionalMedicareTaxable.multiply(taxYearProfile.getAdditionalMedicareRate())
         );
 
-        BigDecimal futaTaxable = max(
-            BigDecimal.ZERO,
-            taxYearProfile.getFederalUnemploymentWageBase().subtract(yearToDateGross)
-        ).min(taxableWages);
+        BigDecimal ytdFutaWages = ytdTaxableWages(
+            employee.getId(),
+            taxYear,
+            EmployeeTaxAccumulator.TaxCode.FUTA,
+            "US"
+        );
+        BigDecimal futaTaxable = remainingWageBase(
+            taxYearProfile.getFederalUnemploymentWageBase(),
+            ytdFutaWages,
+            taxableWages
+        );
         BigDecimal employerFutaTax = money(
             futaTaxable.multiply(taxYearProfile.getFederalUnemploymentRate())
         );
 
-        BigDecimal employerStateUnemploymentTax = calculateEmployerStateUnemploymentTax(
+        StateUnemploymentComputation stateUnemploymentComputation = calculateEmployerStateUnemploymentTax(
             employee,
             taxYear,
-            taxableWages,
-            yearToDateGross
+            resolvedAllocations
         );
 
         BigDecimal employeeTaxTotal = money(
@@ -118,8 +138,8 @@ public class TaxEngineService {
                 .add(socialSecurityEmployeeTax)
                 .add(medicareEmployeeTax)
                 .add(additionalMedicareEmployeeTax)
-                .add(stateIncomeTax)
-                .add(localIncomeTax)
+                .add(stateTaxComputation.totalStateIncomeTax())
+                .add(stateTaxComputation.totalLocalIncomeTax())
         );
         BigDecimal netPay = money(grossPay.subtract(pretax).subtract(employeeTaxTotal));
 
@@ -138,15 +158,44 @@ public class TaxEngineService {
             socialSecurityEmployeeTax,
             medicareEmployeeTax,
             additionalMedicareEmployeeTax,
-            stateIncomeTax,
-            localIncomeTax,
+            stateTaxComputation.totalStateIncomeTax(),
+            stateTaxComputation.totalWorkStateIncomeTax(),
+            stateTaxComputation.residentStateIncomeTax(),
+            stateTaxComputation.residentStateCreditOffset(),
+            stateTaxComputation.totalLocalIncomeTax(),
             employeeTaxTotal,
             socialSecurityEmployerTax,
             medicareEmployerTax,
             employerFutaTax,
-            employerStateUnemploymentTax,
-            stateWithholdingProfile == null ? employee.getWorkState() : stateWithholdingProfile.getTaxJurisdiction().getCode(),
-            effectiveLocalJurisdictionCode(employee),
+            stateUnemploymentComputation.employerStateUnemploymentTax(),
+            socialSecurityTaxable,
+            futaTaxable,
+            stateUnemploymentComputation.stateUnemploymentTaxableWages(),
+            stateTaxComputation.primaryWorkStateJurisdictionCode(),
+            stateTaxComputation.primaryLocalJurisdictionCode(),
+            stateTaxComputation.residentStateJurisdictionCode(),
+            stateTaxComputation.allocations().stream()
+                .map(allocation -> new WorkLocationAccumulator(
+                    allocation.allocation().stateJurisdictionCode(),
+                    allocation.allocation().localJurisdictionCode(),
+                    allocation.allocation().allocationPercentage(),
+                    allocation.allocation().allocatedGrossWages(),
+                    allocation.allocation().allocatedTaxableWages(),
+                    allocation.workStateIncomeTax(),
+                    allocation.localIncomeTax(),
+                    stateUnemploymentComputation.taxableWagesForState(allocation.allocation().stateJurisdictionCode()),
+                    stateUnemploymentComputation.employerTaxForState(allocation.allocation().stateJurisdictionCode()),
+                    allocation.residentStateCreditApplied(),
+                    allocation.reciprocityApplied()
+                ))
+                .toList(),
+            stateUnemploymentComputation.components().stream()
+                .map(component -> new StateUnemploymentAccumulator(
+                    component.stateJurisdictionCode(),
+                    component.taxableWages(),
+                    component.employerTax()
+                ))
+                .toList(),
             netPay
         );
     }
@@ -244,63 +293,316 @@ public class TaxEngineService {
         };
     }
 
-    private BigDecimal calculateLocalIncomeTax(Employee employee, Integer taxYear, BigDecimal taxableWages) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (String jurisdictionCode : localJurisdictionCodes(employee)) {
-            JurisdictionTaxProfile profile = jurisdictionTaxProfileRepository
-                .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
-                    jurisdictionCode,
-                    taxYear,
-                    JurisdictionTaxProfile.TaxType.LOCAL_WITHHOLDING
-                )
-                .orElse(null);
-            if (profile == null) {
-                continue;
-            }
-
-            boolean resident = jurisdictionCode.equalsIgnoreCase(employee.getResidenceLocalJurisdictionCode());
-            BigDecimal rate = resident ? nz(profile.getResidentRate()) : nz(profile.getNonResidentRate());
-            total = total.add(taxableWages.multiply(rate));
-        }
-        return money(total);
-    }
-
-    private BigDecimal calculateEmployerStateUnemploymentTax(
+    private StateTaxComputation calculateStateTaxes(
         Employee employee,
         Integer taxYear,
         BigDecimal taxableWages,
-        BigDecimal yearToDateGross
+        List<ResolvedWorkLocationAllocation> allocations
     ) {
-        JurisdictionTaxProfile profile = jurisdictionTaxProfileRepository
+        JurisdictionTaxProfile residentStateProfile = jurisdictionTaxProfileRepository
             .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
-                employee.getWorkState(),
+                employee.getResidenceState(),
                 taxYear,
-                JurisdictionTaxProfile.TaxType.STATE_UNEMPLOYMENT
+                JurisdictionTaxProfile.TaxType.STATE_WITHHOLDING
             )
             .orElse(null);
-        if (profile == null || nz(profile.getEmployerRate()).signum() == 0) {
+
+        List<WorkLocationTaxBreakdown> breakdowns = allocations.stream()
+            .map(allocation -> {
+                boolean reciprocityApplied = hasReciprocity(employee.getResidenceState(), allocation.stateJurisdictionCode());
+                BigDecimal workStateIncomeTax = calculateWorkStateIncomeTax(
+                    employee,
+                    taxYear,
+                    allocation,
+                    reciprocityApplied
+                );
+                BigDecimal localIncomeTax = calculateLocalIncomeTaxForAllocation(
+                    employee,
+                    taxYear,
+                    allocation
+                );
+                return new WorkLocationTaxBreakdown(
+                    allocation,
+                    workStateIncomeTax,
+                    localIncomeTax,
+                    reciprocityApplied,
+                    ZERO
+                );
+            })
+            .toList();
+
+        BigDecimal totalWorkStateIncomeTax = breakdowns.stream()
+            .map(WorkLocationTaxBreakdown::workStateIncomeTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal residentStateGrossLiability = residentStateProfile == null
+            ? ZERO
+            : money(taxableWages.multiply(nz(residentStateProfile.getResidentRate())));
+        BigDecimal residentStateCreditOffset = money(residentStateGrossLiability.min(totalWorkStateIncomeTax));
+        BigDecimal residentStateIncomeTax = money(residentStateGrossLiability.subtract(residentStateCreditOffset));
+
+        List<WorkLocationTaxBreakdown> creditAppliedBreakdowns = applyResidentCredits(
+            breakdowns,
+            residentStateCreditOffset
+        );
+
+        BigDecimal totalLocalIncomeTax = creditAppliedBreakdowns.stream()
+            .map(WorkLocationTaxBreakdown::localIncomeTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalStateIncomeTax = money(totalWorkStateIncomeTax.add(residentStateIncomeTax));
+
+        return new StateTaxComputation(
+            totalStateIncomeTax,
+            totalWorkStateIncomeTax,
+            residentStateIncomeTax,
+            residentStateCreditOffset,
+            totalLocalIncomeTax,
+            residentStateProfile == null ? null : employee.getResidenceState(),
+            primaryWorkStateCode(allocations, employee),
+            primaryLocalJurisdictionCode(allocations),
+            creditAppliedBreakdowns
+        );
+    }
+
+    private StateUnemploymentComputation calculateEmployerStateUnemploymentTax(
+        Employee employee,
+        Integer taxYear,
+        List<ResolvedWorkLocationAllocation> allocations
+    ) {
+        java.util.ArrayList<StateUnemploymentComponent> components = new java.util.ArrayList<>();
+        BigDecimal totalEmployerStateUnemploymentTax = BigDecimal.ZERO;
+        BigDecimal totalStateUnemploymentTaxableWages = BigDecimal.ZERO;
+
+        for (ResolvedWorkLocationAllocation allocation : allocations) {
+            JurisdictionTaxProfile profile = jurisdictionTaxProfileRepository
+                .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
+                    allocation.stateJurisdictionCode(),
+                    taxYear,
+                    JurisdictionTaxProfile.TaxType.STATE_UNEMPLOYMENT
+                )
+                .orElse(null);
+            if (profile == null || nz(profile.getEmployerRate()).signum() == 0) {
+                continue;
+            }
+
+            BigDecimal ytdStateUnemploymentWages = ytdTaxableWages(
+                employee.getId(),
+                taxYear,
+                EmployeeTaxAccumulator.TaxCode.STATE_UNEMPLOYMENT,
+                allocation.stateJurisdictionCode()
+            );
+            BigDecimal unemploymentTaxable = profile.getWageBase() == null
+                ? allocation.allocatedTaxableWages()
+                : remainingWageBase(
+                    profile.getWageBase(),
+                    ytdStateUnemploymentWages,
+                    allocation.allocatedTaxableWages()
+                );
+            BigDecimal employerTax = money(unemploymentTaxable.multiply(nz(profile.getEmployerRate())));
+            components.add(new StateUnemploymentComponent(
+                allocation.stateJurisdictionCode(),
+                unemploymentTaxable,
+                employerTax
+            ));
+            totalEmployerStateUnemploymentTax = totalEmployerStateUnemploymentTax.add(employerTax);
+            totalStateUnemploymentTaxableWages = totalStateUnemploymentTaxableWages.add(unemploymentTaxable);
+        }
+
+        return new StateUnemploymentComputation(
+            money(totalEmployerStateUnemploymentTax),
+            money(totalStateUnemploymentTaxableWages),
+            List.copyOf(components)
+        );
+    }
+
+    private List<ResolvedWorkLocationAllocation> resolveAllocations(
+        Employee employee,
+        BigDecimal grossPay,
+        BigDecimal taxableWages,
+        List<PayrollDtos.WorkLocationAllocationRequest> requestedAllocations
+    ) {
+        List<PayrollDtos.WorkLocationAllocationRequest> effectiveAllocations =
+            requestedAllocations == null || requestedAllocations.isEmpty()
+                ? List.of(new PayrollDtos.WorkLocationAllocationRequest(
+                    employee.getWorkState(),
+                    employee.getWorkLocalJurisdictionCode(),
+                    HUNDRED_PERCENT
+                ))
+                : requestedAllocations;
+
+        validateAllocationPercentages(effectiveAllocations);
+
+        BigDecimal remainingGross = grossPay;
+        BigDecimal remainingTaxable = taxableWages;
+        java.util.ArrayList<ResolvedWorkLocationAllocation> resolved = new java.util.ArrayList<>();
+
+        for (int index = 0; index < effectiveAllocations.size(); index++) {
+            PayrollDtos.WorkLocationAllocationRequest allocation = effectiveAllocations.get(index);
+            BigDecimal allocationPercentage = allocation.allocationPercentage().setScale(4, RoundingMode.HALF_UP);
+            BigDecimal allocatedGrossWages = index == effectiveAllocations.size() - 1
+                ? remainingGross
+                : money(grossPay.multiply(allocationPercentage));
+            BigDecimal allocatedTaxableWages = index == effectiveAllocations.size() - 1
+                ? remainingTaxable
+                : money(taxableWages.multiply(allocationPercentage));
+            resolved.add(new ResolvedWorkLocationAllocation(
+                allocation.stateJurisdictionCode(),
+                allocation.localJurisdictionCode(),
+                allocationPercentage,
+                allocatedGrossWages,
+                allocatedTaxableWages
+            ));
+            remainingGross = money(remainingGross.subtract(allocatedGrossWages));
+            remainingTaxable = money(remainingTaxable.subtract(allocatedTaxableWages));
+        }
+
+        return List.copyOf(resolved);
+    }
+
+    private void validateAllocationPercentages(List<PayrollDtos.WorkLocationAllocationRequest> allocations) {
+        BigDecimal total = allocations.stream()
+            .map(PayrollDtos.WorkLocationAllocationRequest::allocationPercentage)
+            .reduce(BigDecimal.ZERO, BigDecimal::add)
+            .setScale(4, RoundingMode.HALF_UP);
+        if (total.compareTo(HUNDRED_PERCENT) != 0) {
+            throw new IllegalArgumentException("Work location allocation percentages must total 1.0000");
+        }
+    }
+
+    private BigDecimal calculateWorkStateIncomeTax(
+        Employee employee,
+        Integer taxYear,
+        ResolvedWorkLocationAllocation allocation,
+        boolean reciprocityApplied
+    ) {
+        if (allocation.stateJurisdictionCode().equalsIgnoreCase(employee.getResidenceState()) || reciprocityApplied) {
             return ZERO;
         }
-
-        BigDecimal unemploymentTaxable = profile.getWageBase() == null
-            ? taxableWages
-            : max(BigDecimal.ZERO, profile.getWageBase().subtract(yearToDateGross)).min(taxableWages);
-        return money(unemploymentTaxable.multiply(nz(profile.getEmployerRate())));
+        JurisdictionTaxProfile workStateProfile = jurisdictionTaxProfileRepository
+            .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
+                allocation.stateJurisdictionCode(),
+                taxYear,
+                JurisdictionTaxProfile.TaxType.STATE_WITHHOLDING
+            )
+            .orElse(null);
+        if (workStateProfile == null) {
+            return money(allocation.allocatedTaxableWages().multiply(nz(employee.getStateWithholdingRate())));
+        }
+        return money(allocation.allocatedTaxableWages().multiply(nz(workStateProfile.getNonResidentRate())));
     }
 
-    private List<String> localJurisdictionCodes(Employee employee) {
-        LinkedHashSet<String> codes = new LinkedHashSet<>();
-        if (employee.getWorkLocalJurisdictionCode() != null && !employee.getWorkLocalJurisdictionCode().isBlank()) {
-            codes.add(employee.getWorkLocalJurisdictionCode());
+    private BigDecimal calculateLocalIncomeTaxForAllocation(
+        Employee employee,
+        Integer taxYear,
+        ResolvedWorkLocationAllocation allocation
+    ) {
+        if (allocation.localJurisdictionCode() == null || allocation.localJurisdictionCode().isBlank()) {
+            return ZERO;
         }
-        if (employee.getResidenceLocalJurisdictionCode() != null && !employee.getResidenceLocalJurisdictionCode().isBlank()) {
-            codes.add(employee.getResidenceLocalJurisdictionCode());
+        JurisdictionTaxProfile profile = jurisdictionTaxProfileRepository
+            .findByTaxJurisdiction_CodeAndTaxYearAndTaxType(
+                allocation.localJurisdictionCode(),
+                taxYear,
+                JurisdictionTaxProfile.TaxType.LOCAL_WITHHOLDING
+            )
+            .orElse(null);
+        if (profile == null) {
+            return ZERO;
         }
-        return List.copyOf(codes);
+        boolean resident = allocation.localJurisdictionCode().equalsIgnoreCase(employee.getResidenceLocalJurisdictionCode());
+        BigDecimal rate = resident ? nz(profile.getResidentRate()) : nz(profile.getNonResidentRate());
+        return money(allocation.allocatedTaxableWages().multiply(rate));
     }
 
-    private String effectiveLocalJurisdictionCode(Employee employee) {
-        return localJurisdictionCodes(employee).stream().findFirst().orElse(null);
+    private List<WorkLocationTaxBreakdown> applyResidentCredits(
+        List<WorkLocationTaxBreakdown> breakdowns,
+        BigDecimal residentStateCreditOffset
+    ) {
+        BigDecimal totalExternalTax = breakdowns.stream()
+            .map(WorkLocationTaxBreakdown::workStateIncomeTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (residentStateCreditOffset.signum() == 0 || totalExternalTax.signum() == 0) {
+            return breakdowns;
+        }
+
+        BigDecimal remainingCredit = residentStateCreditOffset;
+        int lastTaxableIndex = -1;
+        for (int index = 0; index < breakdowns.size(); index++) {
+            if (breakdowns.get(index).workStateIncomeTax().signum() > 0) {
+                lastTaxableIndex = index;
+            }
+        }
+        java.util.ArrayList<WorkLocationTaxBreakdown> adjusted = new java.util.ArrayList<>();
+        for (int index = 0; index < breakdowns.size(); index++) {
+            WorkLocationTaxBreakdown breakdown = breakdowns.get(index);
+            BigDecimal credit = breakdown.workStateIncomeTax().signum() == 0
+                ? ZERO
+                : index == lastTaxableIndex
+                    ? remainingCredit
+                    : money(
+                        residentStateCreditOffset.multiply(
+                            breakdown.workStateIncomeTax().divide(totalExternalTax, 8, RoundingMode.HALF_UP)
+                        )
+                    );
+            adjusted.add(new WorkLocationTaxBreakdown(
+                breakdown.allocation(),
+                breakdown.workStateIncomeTax(),
+                breakdown.localIncomeTax(),
+                breakdown.reciprocityApplied(),
+                credit
+            ));
+            remainingCredit = money(remainingCredit.subtract(credit));
+        }
+        return List.copyOf(adjusted);
+    }
+
+    private boolean hasReciprocity(String residentStateCode, String workStateCode) {
+        if (residentStateCode.equalsIgnoreCase(workStateCode)) {
+            return false;
+        }
+        return stateReciprocityAgreementRepository.findByResidentStateCodeAndWorkStateCodeAndActiveTrue(
+            residentStateCode,
+            workStateCode
+        ).isPresent();
+    }
+
+    private String primaryWorkStateCode(List<ResolvedWorkLocationAllocation> allocations, Employee employee) {
+        return allocations.stream()
+            .max(java.util.Comparator.comparing(ResolvedWorkLocationAllocation::allocatedTaxableWages))
+            .map(ResolvedWorkLocationAllocation::stateJurisdictionCode)
+            .orElse(employee.getWorkState());
+    }
+
+    private String primaryLocalJurisdictionCode(List<ResolvedWorkLocationAllocation> allocations) {
+        return allocations.stream()
+            .map(ResolvedWorkLocationAllocation::localJurisdictionCode)
+            .filter(code -> code != null && !code.isBlank())
+            .findFirst()
+            .orElse(null);
+    }
+
+    private BigDecimal ytdTaxableWages(
+        Long employeeId,
+        Integer taxYear,
+        EmployeeTaxAccumulator.TaxCode taxCode,
+        String jurisdictionCode
+    ) {
+        return employeeTaxAccumulatorRepository.findByEmployeeIdAndTaxYearAndTaxCodeAndJurisdictionCode(
+            employeeId,
+            taxYear,
+            taxCode,
+            jurisdictionCode
+        )
+            .map(EmployeeTaxAccumulator::getYtdTaxableWages)
+            .orElse(BigDecimal.ZERO);
+    }
+
+    private BigDecimal remainingWageBase(
+        BigDecimal wageBase,
+        BigDecimal ytdTaxableWages,
+        BigDecimal currentTaxableWages
+    ) {
+        return max(BigDecimal.ZERO, wageBase.subtract(ytdTaxableWages)).min(currentTaxableWages);
     }
 
     private BigDecimal money(BigDecimal value) {
@@ -331,15 +633,106 @@ public class TaxEngineService {
         BigDecimal medicareEmployeeTax,
         BigDecimal additionalMedicareEmployeeTax,
         BigDecimal stateIncomeTax,
+        BigDecimal workStateIncomeTax,
+        BigDecimal residentStateIncomeTax,
+        BigDecimal residentStateCreditOffset,
         BigDecimal localIncomeTax,
         BigDecimal employeeTaxTotal,
         BigDecimal employerSocialSecurityTax,
         BigDecimal employerMedicareTax,
         BigDecimal employerFutaTax,
         BigDecimal employerStateUnemploymentTax,
+        BigDecimal socialSecurityTaxableWages,
+        BigDecimal federalUnemploymentTaxableWages,
+        BigDecimal stateUnemploymentTaxableWages,
         String stateJurisdictionCode,
         String localJurisdictionCode,
+        String residentStateJurisdictionCode,
+        List<WorkLocationAccumulator> workLocationAccumulators,
+        List<StateUnemploymentAccumulator> stateUnemploymentAccumulators,
         BigDecimal netPay
+    ) {
+    }
+
+    public record WorkLocationAccumulator(
+        String stateJurisdictionCode,
+        String localJurisdictionCode,
+        BigDecimal allocationPercentage,
+        BigDecimal allocatedGrossWages,
+        BigDecimal allocatedTaxableWages,
+        BigDecimal workStateIncomeTax,
+        BigDecimal localIncomeTax,
+        BigDecimal stateUnemploymentTaxableWages,
+        BigDecimal employerStateUnemploymentTax,
+        BigDecimal residentStateCreditApplied,
+        boolean reciprocityApplied
+    ) {
+    }
+
+    public record StateUnemploymentAccumulator(
+        String stateJurisdictionCode,
+        BigDecimal taxableWages,
+        BigDecimal employerTax
+    ) {
+    }
+
+    private record ResolvedWorkLocationAllocation(
+        String stateJurisdictionCode,
+        String localJurisdictionCode,
+        BigDecimal allocationPercentage,
+        BigDecimal allocatedGrossWages,
+        BigDecimal allocatedTaxableWages
+    ) {
+    }
+
+    private record WorkLocationTaxBreakdown(
+        ResolvedWorkLocationAllocation allocation,
+        BigDecimal workStateIncomeTax,
+        BigDecimal localIncomeTax,
+        boolean reciprocityApplied,
+        BigDecimal residentStateCreditApplied
+    ) {
+    }
+
+    private record StateTaxComputation(
+        BigDecimal totalStateIncomeTax,
+        BigDecimal totalWorkStateIncomeTax,
+        BigDecimal residentStateIncomeTax,
+        BigDecimal residentStateCreditOffset,
+        BigDecimal totalLocalIncomeTax,
+        String residentStateJurisdictionCode,
+        String primaryWorkStateJurisdictionCode,
+        String primaryLocalJurisdictionCode,
+        List<WorkLocationTaxBreakdown> allocations
+    ) {
+    }
+
+    private record StateUnemploymentComputation(
+        BigDecimal employerStateUnemploymentTax,
+        BigDecimal stateUnemploymentTaxableWages,
+        List<StateUnemploymentComponent> components
+    ) {
+        private BigDecimal taxableWagesForState(String stateJurisdictionCode) {
+            return components.stream()
+                .filter(component -> component.stateJurisdictionCode().equalsIgnoreCase(stateJurisdictionCode))
+                .map(StateUnemploymentComponent::taxableWages)
+                .findFirst()
+                .orElse(BigDecimal.ZERO);
+        }
+
+        private BigDecimal employerTaxForState(String stateJurisdictionCode) {
+            return components.stream()
+                .filter(component -> component.stateJurisdictionCode().equalsIgnoreCase(stateJurisdictionCode))
+                .map(StateUnemploymentComponent::employerTax)
+                .findFirst()
+                .orElse(BigDecimal.ZERO);
+        }
+    }
+
+    private record StateUnemploymentComponent(
+        String stateJurisdictionCode,
+        BigDecimal taxableWages,
+        BigDecimal employerTax
     ) {
     }
 }

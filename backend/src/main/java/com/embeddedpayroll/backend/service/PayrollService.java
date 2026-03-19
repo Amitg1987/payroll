@@ -7,11 +7,13 @@ import com.embeddedpayroll.backend.model.EmployeeW4Profile;
 import com.embeddedpayroll.backend.model.Organization;
 import com.embeddedpayroll.backend.model.PayrollRun;
 import com.embeddedpayroll.backend.model.PayrollRunItem;
+import com.embeddedpayroll.backend.model.PayrollRunItemAllocation;
 import com.embeddedpayroll.backend.model.PayrollSchedule;
 import com.embeddedpayroll.backend.repository.EmployeeRepository;
 import com.embeddedpayroll.backend.repository.EmployeeW4ProfileRepository;
 import com.embeddedpayroll.backend.repository.OrganizationRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunItemRepository;
+import com.embeddedpayroll.backend.repository.PayrollRunItemAllocationRepository;
 import com.embeddedpayroll.backend.repository.PayrollRunRepository;
 import com.embeddedpayroll.backend.repository.PayrollScheduleRepository;
 import java.math.BigDecimal;
@@ -35,7 +37,9 @@ public class PayrollService {
     private final PayrollScheduleRepository payrollScheduleRepository;
     private final PayrollRunRepository payrollRunRepository;
     private final PayrollRunItemRepository payrollRunItemRepository;
+    private final PayrollRunItemAllocationRepository payrollRunItemAllocationRepository;
     private final TaxEngineService taxEngineService;
+    private final EmployeeTaxAccumulatorService employeeTaxAccumulatorService;
     private final WebhookService webhookService;
 
     @Transactional(readOnly = true)
@@ -156,6 +160,12 @@ public class PayrollService {
         return payrollRunItemRepository.findByPayrollRunIdOrderByEmployeeLastNameAscEmployeeFirstNameAsc(payrollRunId);
     }
 
+    @Transactional(readOnly = true)
+    public List<PayrollRunItemAllocation> listItemAllocations(Long payrollRunItemId) {
+        return payrollRunItemAllocationRepository
+            .findByPayrollRunItemIdOrderByStateJurisdictionCodeAscLocalJurisdictionCodeAsc(payrollRunItemId);
+    }
+
     @Transactional
     public PayrollRun processSchedule(
         Long scheduleId,
@@ -218,7 +228,13 @@ public class PayrollService {
         for (Employee employee : employees) {
             PayrollDtos.EmployeeAdjustmentRequest adjustments = adjustmentMap.getOrDefault(
                 employee.getId(),
-                new PayrollDtos.EmployeeAdjustmentRequest(employee.getId(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+                new PayrollDtos.EmployeeAdjustmentRequest(
+                    employee.getId(),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    List.of()
+                )
             );
             EmployeeW4Profile w4Profile = findCurrentW4(employee.getId(), taxYear);
             TaxEngineService.PayrollComputation computation = taxEngineService.calculate(
@@ -228,11 +244,14 @@ public class PayrollService {
                 schedule.getFrequency(),
                 adjustments.bonusPay(),
                 adjustments.overtimeHours(),
-                adjustments.preTaxDeductions()
+                adjustments.preTaxDeductions(),
+                adjustments.workLocationAllocations()
             );
 
             PayrollRunItem item = toRunItem(savedRun, employee, computation);
-            payrollRunItemRepository.save(item);
+            PayrollRunItem savedItem = payrollRunItemRepository.save(item);
+            saveItemAllocations(savedItem, computation);
+            employeeTaxAccumulatorService.recordComputation(employee, computation);
 
             grossTotal = grossTotal.add(computation.grossPay());
             deductionTotal = deductionTotal.add(computation.preTaxDeductions());
@@ -315,7 +334,8 @@ public class PayrollService {
             request.frequency(),
             request.bonusPay(),
             request.overtimeHours(),
-            request.preTaxDeductions()
+            request.preTaxDeductions(),
+            request.workLocationAllocations()
         );
     }
 
@@ -338,16 +358,45 @@ public class PayrollService {
         item.setMedicareEmployeeTax(computation.medicareEmployeeTax());
         item.setAdditionalMedicareEmployeeTax(computation.additionalMedicareEmployeeTax());
         item.setStateIncomeTax(computation.stateIncomeTax());
+        item.setWorkStateIncomeTax(computation.workStateIncomeTax());
+        item.setResidentStateIncomeTax(computation.residentStateIncomeTax());
+        item.setResidentStateCreditOffset(computation.residentStateCreditOffset());
         item.setLocalIncomeTax(computation.localIncomeTax());
         item.setEmployeeTaxTotal(computation.employeeTaxTotal());
         item.setEmployerSocialSecurityTax(computation.employerSocialSecurityTax());
         item.setEmployerMedicareTax(computation.employerMedicareTax());
         item.setEmployerFutaTax(computation.employerFutaTax());
         item.setEmployerStateUnemploymentTax(computation.employerStateUnemploymentTax());
+        item.setSocialSecurityTaxableWages(computation.socialSecurityTaxableWages());
+        item.setFederalUnemploymentTaxableWages(computation.federalUnemploymentTaxableWages());
+        item.setStateUnemploymentTaxableWages(computation.stateUnemploymentTaxableWages());
         item.setStateJurisdictionCode(computation.stateJurisdictionCode());
         item.setLocalJurisdictionCode(computation.localJurisdictionCode());
+        item.setResidentStateJurisdictionCode(computation.residentStateJurisdictionCode());
         item.setNetPay(computation.netPay());
         return item;
+    }
+
+    private void saveItemAllocations(
+        PayrollRunItem payrollRunItem,
+        TaxEngineService.PayrollComputation computation
+    ) {
+        for (TaxEngineService.WorkLocationAccumulator allocation : computation.workLocationAccumulators()) {
+            PayrollRunItemAllocation entity = new PayrollRunItemAllocation();
+            entity.setPayrollRunItem(payrollRunItem);
+            entity.setStateJurisdictionCode(allocation.stateJurisdictionCode());
+            entity.setLocalJurisdictionCode(allocation.localJurisdictionCode());
+            entity.setAllocationPercentage(allocation.allocationPercentage());
+            entity.setAllocatedGrossWages(allocation.allocatedGrossWages());
+            entity.setAllocatedTaxableWages(allocation.allocatedTaxableWages());
+            entity.setWorkStateIncomeTax(allocation.workStateIncomeTax());
+            entity.setLocalIncomeTax(allocation.localIncomeTax());
+            entity.setStateUnemploymentTaxableWages(allocation.stateUnemploymentTaxableWages());
+            entity.setEmployerStateUnemploymentTax(allocation.employerStateUnemploymentTax());
+            entity.setResidentStateCreditApplied(allocation.residentStateCreditApplied());
+            entity.setReciprocityApplied(allocation.reciprocityApplied());
+            payrollRunItemAllocationRepository.save(entity);
+        }
     }
 
     private void validateCompensation(Employee employee) {

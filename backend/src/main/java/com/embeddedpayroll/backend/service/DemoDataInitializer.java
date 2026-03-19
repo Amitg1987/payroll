@@ -10,6 +10,7 @@ import com.embeddedpayroll.backend.model.Organization;
 import com.embeddedpayroll.backend.model.OrganizationJurisdiction;
 import com.embeddedpayroll.backend.model.PartnerApiClient;
 import com.embeddedpayroll.backend.model.PayrollSchedule;
+import com.embeddedpayroll.backend.model.StateReciprocityAgreement;
 import com.embeddedpayroll.backend.model.TaxFilingRecord;
 import com.embeddedpayroll.backend.model.TaxJurisdiction;
 import com.embeddedpayroll.backend.model.TaxYearProfile;
@@ -21,6 +22,7 @@ import com.embeddedpayroll.backend.repository.OrganizationJurisdictionRepository
 import com.embeddedpayroll.backend.repository.OrganizationRepository;
 import com.embeddedpayroll.backend.repository.PartnerApiClientRepository;
 import com.embeddedpayroll.backend.repository.PayrollScheduleRepository;
+import com.embeddedpayroll.backend.repository.StateReciprocityAgreementRepository;
 import com.embeddedpayroll.backend.repository.TaxJurisdictionRepository;
 import com.embeddedpayroll.backend.repository.TaxYearProfileRepository;
 import com.embeddedpayroll.backend.repository.UserAccountRepository;
@@ -50,6 +52,7 @@ public class DemoDataInitializer implements CommandLineRunner {
     private final EmployeeRepository employeeRepository;
     private final EmployeeW4ProfileRepository employeeW4ProfileRepository;
     private final PayrollScheduleRepository payrollScheduleRepository;
+    private final StateReciprocityAgreementRepository stateReciprocityAgreementRepository;
     private final PayrollService payrollService;
     private final TaxFilingWorkflowService taxFilingWorkflowService;
     private final PasswordEncoder passwordEncoder;
@@ -62,6 +65,7 @@ public class DemoDataInitializer implements CommandLineRunner {
         }
 
         seedTaxJurisdictions();
+        seedReciprocityAgreements();
         seedFederalTaxProfiles();
         seedJurisdictionTaxProfiles();
 
@@ -88,7 +92,7 @@ public class DemoDataInitializer implements CommandLineRunner {
             "payroll@northwind.dev"
         );
 
-        seedOrganizationJurisdictions(acme, List.of("CA", "IL", "TX", "SF_CA"));
+        seedOrganizationJurisdictions(acme, List.of("CA", "IL", "TX", "PA", "NJ", "NY", "SF_CA", "PHL_PA", "NYC_NY"));
         seedOrganizationJurisdictions(northwind, List.of("NY", "NYC_NY"));
 
         seedUsers(acme, "admin", "accountant", "approver", "integrator");
@@ -150,10 +154,48 @@ public class DemoDataInitializer implements CommandLineRunner {
             null,
             null
         );
+        Employee olivia = createEmployee(
+            acme,
+            "EMP-1004",
+            "Olivia",
+            "Reed",
+            "olivia.reed@acmepayroll.dev",
+            "1182",
+            Employee.CompensationType.SALARIED,
+            new BigDecimal("96000.00"),
+            null,
+            new BigDecimal("80.00"),
+            new BigDecimal("0.0530"),
+            "Sales",
+            "PA",
+            "NJ",
+            "PHL_PA",
+            null
+        );
+        Employee ethan = createEmployee(
+            acme,
+            "EMP-1005",
+            "Ethan",
+            "Cole",
+            "ethan.cole@acmepayroll.dev",
+            "6615",
+            Employee.CompensationType.SALARIED,
+            new BigDecimal("104000.00"),
+            null,
+            new BigDecimal("80.00"),
+            new BigDecimal("0.0600"),
+            "Consulting",
+            "NJ",
+            "NY",
+            null,
+            "NYC_NY"
+        );
 
         seedW4(john, EmployeeW4Profile.FilingStatus.MARRIED_FILING_JOINTLY, new BigDecimal("2000.00"));
         seedW4(maria, EmployeeW4Profile.FilingStatus.HEAD_OF_HOUSEHOLD, new BigDecimal("1000.00"));
         seedW4(kevin, EmployeeW4Profile.FilingStatus.SINGLE, BigDecimal.ZERO);
+        seedW4(olivia, EmployeeW4Profile.FilingStatus.SINGLE, BigDecimal.ZERO);
+        seedW4(ethan, EmployeeW4Profile.FilingStatus.SINGLE, BigDecimal.ZERO);
 
         PayrollSchedule schedule = new PayrollSchedule();
         schedule.setOrganization(acme);
@@ -453,6 +495,30 @@ public class DemoDataInitializer implements CommandLineRunner {
                 localSeed.parentJurisdictionCode()
             );
         }
+    }
+
+    private void seedReciprocityAgreements() {
+        createReciprocity("NJ", "PA", "New Jersey residents working in Pennsylvania are covered by reciprocity");
+        createReciprocity("PA", "NJ", "Pennsylvania residents working in New Jersey are covered by reciprocity");
+        createReciprocity("OH", "PA", "Ohio and Pennsylvania reciprocity seed");
+        createReciprocity("PA", "OH", "Pennsylvania and Ohio reciprocity seed");
+        createReciprocity("IN", "PA", "Indiana and Pennsylvania reciprocity seed");
+        createReciprocity("PA", "IN", "Pennsylvania and Indiana reciprocity seed");
+        createReciprocity("MD", "PA", "Maryland and Pennsylvania reciprocity seed");
+        createReciprocity("PA", "MD", "Pennsylvania and Maryland reciprocity seed");
+        createReciprocity("VA", "PA", "Virginia and Pennsylvania reciprocity seed");
+        createReciprocity("PA", "VA", "Pennsylvania and Virginia reciprocity seed");
+        createReciprocity("WV", "PA", "West Virginia and Pennsylvania reciprocity seed");
+        createReciprocity("PA", "WV", "Pennsylvania and West Virginia reciprocity seed");
+    }
+
+    private void createReciprocity(String residentStateCode, String workStateCode, String notes) {
+        StateReciprocityAgreement agreement = new StateReciprocityAgreement();
+        agreement.setResidentStateCode(residentStateCode);
+        agreement.setWorkStateCode(workStateCode);
+        agreement.setActive(true);
+        agreement.setNotes(notes);
+        stateReciprocityAgreementRepository.save(agreement);
     }
 
     private void createJurisdiction(

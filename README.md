@@ -31,7 +31,14 @@ The stack includes:
 - W-2 employee payroll processing
 - multi-tenant gross-to-net calculations
 - salary and hourly worker support
+- multi-state employee support with per-work-location wage allocation
+- work-state withholding on wages earned in each work state
+- resident-state withholding on all income for residents of taxing states
+- reciprocity agreement checks before nonresident work-state withholding
+- resident-state credit offsets when reciprocity does not apply
 - employee W-4 profile management by tax year
+- YTD tax accumulators per employee per tax code
+- wage-base aware caps for Social Security, FUTA, and state unemployment taxes
 - scheduled payroll runs with approval workflows
 - atomic transactional writes across payroll headers, items, and event/outbox artifacts
 
@@ -45,6 +52,7 @@ The stack includes:
   - FUTA
 - seeded support for **all 50 US states**
 - data-driven support for **local jurisdictions**
+- seeded reciprocity agreement coverage for common reciprocal state pairs
 - employer-side state unemployment tax support
 - historical federal tax year support for 2021-2026
 
@@ -73,6 +81,7 @@ The stack includes:
 
 - payroll run monitoring
 - payroll reporting summary
+- multi-state payroll allocation tracking via API-backed payroll details
 - company jurisdiction visibility
 - partner API client management
 - webhook management and delivery visibility
@@ -157,10 +166,10 @@ The stack includes:
 | `/api/v1/employees` | GET/POST | list or create employees |
 | `/api/v1/employees/{id}/w4` | PUT | upsert W-4 profile |
 | `/api/v1/schedules` | GET/POST | list or create payroll schedules |
-| `/api/v1/schedules/{id}/process` | POST | process payroll for a schedule |
-| `/api/v1/payroll-runs` | GET | payroll run history |
+| `/api/v1/schedules/{id}/process` | POST | process payroll for a schedule with optional work-state allocations |
+| `/api/v1/payroll-runs` | GET | payroll run history with per-location allocation details |
 | `/api/v1/payroll-runs/{id}/approve` | POST | approve payroll run |
-| `/api/v1/payroll/calculate` | POST | gross-to-net calculation |
+| `/api/v1/payroll/calculate` | POST | gross-to-net calculation with optional work-state allocations |
 | `/api/v1/reports/payroll-summary` | GET | employer payroll reporting summary |
 
 ### Tax and jurisdictions
@@ -233,6 +242,41 @@ Idempotency-Key: <caller-generated-key>
 
 The backend stores the request fingerprint and serialized response so repeat submissions with the same key are replayed safely.
 
+### Multi-state allocation request shape
+
+Payroll calculation and payroll processing payloads can include work-location allocations:
+
+```json
+{
+  "employeeId": 1005,
+  "taxYear": 2026,
+  "frequency": "BIWEEKLY",
+  "bonusPay": 0,
+  "overtimeHours": 0,
+  "preTaxDeductions": 0,
+  "workLocationAllocations": [
+    {
+      "stateJurisdictionCode": "NJ",
+      "localJurisdictionCode": null,
+      "allocationPercentage": 0.6000
+    },
+    {
+      "stateJurisdictionCode": "NY",
+      "localJurisdictionCode": "NYC_NY",
+      "allocationPercentage": 0.4000
+    }
+  ]
+}
+```
+
+The engine uses these allocations to:
+
+- calculate work-state withholding on wages earned in each state
+- apply reciprocity before nonresident withholding
+- calculate resident-state liability on all taxable wages
+- apply resident-state credit offsets to avoid double taxation
+- persist allocation-level tax outcomes for payroll history and reporting
+
 ### Webhooks
 
 Webhook support includes:
@@ -291,12 +335,12 @@ The frontend is a React + TypeScript dashboard that can be:
 
 - company and jurisdiction visibility
 - employee and W-4 maintenance
-- payroll calculator
+- payroll calculator with multi-state allocation support in API responses
 - payroll run processing and approvals
 - tax filing records and workflow requests
 - partner API client issuance
 - webhook management and delivery monitoring
-- payroll reporting
+- payroll reporting and multi-state wage/tax summaries
 
 ---
 
@@ -429,6 +473,7 @@ npm run build
 - add payment rails / ACH integration
 - add certified filing provider integrations
 - add richer state and local tax content maintenance
+- expand reciprocity and state-specific allocation rules from seeded reference coverage to certified production tax content
 - add audit, reconciliation, and accounting postings
 - add observability and alerting around workflow/webhook failures
 
@@ -442,6 +487,8 @@ This project is designed around US payroll and tax norms and now includes:
 - federal withholding and FICA/FUTA modeling
 - 50-state seeded tax coverage
 - local jurisdiction support
+- multi-state withholding logic with reciprocity and resident-state credit offsets
+- YTD wage-base tracking per employee per tax code
 - filing records and workflow orchestration
 - partner integration patterns (API keys, idempotency, webhooks)
 

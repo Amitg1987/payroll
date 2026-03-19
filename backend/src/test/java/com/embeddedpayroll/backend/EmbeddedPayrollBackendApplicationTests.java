@@ -1,9 +1,12 @@
 package com.embeddedpayroll.backend;
 
 import com.embeddedpayroll.backend.model.Employee;
+import com.embeddedpayroll.backend.model.EmployeeTaxAccumulator;
 import com.embeddedpayroll.backend.model.PayrollSchedule;
+import com.embeddedpayroll.backend.repository.EmployeeTaxAccumulatorRepository;
 import com.embeddedpayroll.backend.repository.EmployeeRepository;
 import com.embeddedpayroll.backend.repository.UserAccountRepository;
+import com.embeddedpayroll.backend.dto.PayrollDtos;
 import com.embeddedpayroll.backend.service.DemoDataInitializer;
 import com.embeddedpayroll.backend.service.PayrollService;
 import com.embeddedpayroll.backend.service.TaxEngineService;
@@ -12,7 +15,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +43,9 @@ class EmbeddedPayrollBackendApplicationTests {
 	@Autowired
 	private TaxEngineService taxEngineService;
 
+	@Autowired
+	private EmployeeTaxAccumulatorRepository employeeTaxAccumulatorRepository;
+
 	@LocalServerPort
 	private int port;
 
@@ -58,9 +66,10 @@ class EmbeddedPayrollBackendApplicationTests {
 			w4Profile,
 			2026,
 			PayrollSchedule.PayrollFrequency.BIWEEKLY,
-			java.math.BigDecimal.ZERO,
-			java.math.BigDecimal.ZERO,
-			java.math.BigDecimal.ZERO
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			List.of()
 		);
 
 		assertThat(calculation.employeeId()).isEqualTo(employee.getId());
@@ -69,6 +78,103 @@ class EmbeddedPayrollBackendApplicationTests {
 		assertThat(calculation.localIncomeTax()).isPositive();
 		assertThat(calculation.netPay()).isPositive();
 		assertThat(calculation.netPay()).isLessThan(calculation.grossPay());
+	}
+
+	@Test
+	void reciprocityAgreementWithholdsOnlyResidentStateTax() {
+		Employee employee = employeeRepository.findByEmployeeNumber("EMP-1004").orElseThrow();
+		var w4Profile = payrollService.findCurrentW4(employee.getId(), 2026);
+		var calculation = taxEngineService.calculate(
+			employee,
+			w4Profile,
+			2026,
+			PayrollSchedule.PayrollFrequency.BIWEEKLY,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			List.of()
+		);
+
+		assertThat(calculation.workStateIncomeTax()).isEqualByComparingTo("0.00");
+		assertThat(calculation.residentStateIncomeTax()).isPositive();
+		assertThat(calculation.residentStateCreditOffset()).isEqualByComparingTo("0.00");
+		assertThat(calculation.residentStateJurisdictionCode()).isEqualTo("NJ");
+	}
+
+	@Test
+	void nonReciprocalStatesApplyResidentCreditOffset() {
+		Employee employee = employeeRepository.findByEmployeeNumber("EMP-1005").orElseThrow();
+		var w4Profile = payrollService.findCurrentW4(employee.getId(), 2026);
+		var calculation = taxEngineService.calculate(
+			employee,
+			w4Profile,
+			2026,
+			PayrollSchedule.PayrollFrequency.BIWEEKLY,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			List.of()
+		);
+
+		assertThat(calculation.workStateIncomeTax()).isPositive();
+		assertThat(calculation.residentStateIncomeTax()).isPositive();
+		assertThat(calculation.residentStateCreditOffset()).isPositive();
+		assertThat(calculation.stateIncomeTax())
+			.isEqualByComparingTo(calculation.workStateIncomeTax().add(calculation.residentStateIncomeTax()));
+	}
+
+	@Test
+	void multiStateAllocationsAreTrackedPerWorkLocation() {
+		Employee employee = employeeRepository.findByEmployeeNumber("EMP-1005").orElseThrow();
+		var w4Profile = payrollService.findCurrentW4(employee.getId(), 2026);
+		var calculation = taxEngineService.calculate(
+			employee,
+			w4Profile,
+			2026,
+			PayrollSchedule.PayrollFrequency.BIWEEKLY,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			List.of(
+				new PayrollDtos.WorkLocationAllocationRequest("NJ", null, new BigDecimal("0.6000")),
+				new PayrollDtos.WorkLocationAllocationRequest("NY", "NYC_NY", new BigDecimal("0.4000"))
+			)
+		);
+
+		assertThat(calculation.workLocationAccumulators()).hasSize(2);
+		assertThat(calculation.workLocationAccumulators().stream()
+			.map(TaxEngineService.WorkLocationAccumulator::allocatedTaxableWages)
+			.reduce(BigDecimal.ZERO, BigDecimal::add))
+			.isEqualByComparingTo(calculation.taxableWages());
+		assertThat(calculation.workLocationAccumulators().stream()
+			.anyMatch(allocation -> allocation.stateJurisdictionCode().equals("NJ") && allocation.workStateIncomeTax().signum() > 0))
+			.isTrue();
+	}
+
+	@Test
+	void ytdAccumulatorsCapWageBaseTaxes() {
+		Employee employee = employeeRepository.findByEmployeeNumber("EMP-1003").orElseThrow();
+		var w4Profile = payrollService.findCurrentW4(employee.getId(), 2026);
+
+		saveAccumulator(employee, 2026, EmployeeTaxAccumulator.TaxCode.SOCIAL_SECURITY, "US", "181500.00");
+		saveAccumulator(employee, 2026, EmployeeTaxAccumulator.TaxCode.FUTA, "US", "6900.00");
+		saveAccumulator(employee, 2026, EmployeeTaxAccumulator.TaxCode.STATE_UNEMPLOYMENT, "TX", "11800.00");
+		saveAccumulator(employee, 2026, EmployeeTaxAccumulator.TaxCode.MEDICARE, "US", "150000.00");
+
+		var calculation = taxEngineService.calculate(
+			employee,
+			w4Profile,
+			2026,
+			PayrollSchedule.PayrollFrequency.BIWEEKLY,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			List.of()
+		);
+
+		assertThat(calculation.socialSecurityTaxableWages()).isEqualByComparingTo("500.00");
+		assertThat(calculation.federalUnemploymentTaxableWages()).isEqualByComparingTo("100.00");
+		assertThat(calculation.stateUnemploymentTaxableWages()).isEqualByComparingTo("200.00");
 	}
 
 	@Test
@@ -203,5 +309,30 @@ class EmbeddedPayrollBackendApplicationTests {
 		return "Basic " + Base64.getEncoder().encodeToString(
 			(username + ":" + password).getBytes(StandardCharsets.UTF_8)
 		);
+	}
+
+	private void saveAccumulator(
+		Employee employee,
+		int taxYear,
+		EmployeeTaxAccumulator.TaxCode taxCode,
+		String jurisdictionCode,
+		String taxableWages
+	) {
+		EmployeeTaxAccumulator accumulator = employeeTaxAccumulatorRepository
+			.findByEmployeeIdAndTaxYearAndTaxCodeAndJurisdictionCode(
+				employee.getId(),
+				taxYear,
+				taxCode,
+				jurisdictionCode
+			)
+			.orElseGet(EmployeeTaxAccumulator::new);
+		accumulator.setEmployee(employee);
+		accumulator.setTaxYear(taxYear);
+		accumulator.setTaxCode(taxCode);
+		accumulator.setJurisdictionCode(jurisdictionCode);
+		accumulator.setYtdTaxableWages(new BigDecimal(taxableWages));
+		accumulator.setYtdEmployeeTaxAmount(BigDecimal.ZERO);
+		accumulator.setYtdEmployerTaxAmount(BigDecimal.ZERO);
+		employeeTaxAccumulatorRepository.save(accumulator);
 	}
 }

@@ -19,9 +19,11 @@ organizations
   -> organization_jurisdictions
   -> employees
      -> employee_w4_profiles
+     -> employee_tax_accumulators
   -> payroll_schedules
      -> payroll_runs
         -> payroll_run_items
+           -> payroll_run_item_allocations
   -> partner_api_clients
      -> webhook_endpoints
         -> webhook_deliveries
@@ -31,6 +33,7 @@ organizations
 
 tax_jurisdictions
   -> jurisdiction_tax_profiles
+state_reciprocity_agreements
 
 tax_year_profiles
   -> federal_tax_brackets
@@ -277,16 +280,44 @@ Per-employee payroll detail. This is the main gross-to-net ledger output.
 | social_security_employee_tax | decimal(14,2) | employee FICA OASDI |
 | medicare_employee_tax | decimal(14,2) | employee Medicare |
 | additional_medicare_employee_tax | decimal(14,2) | additional Medicare |
-| state_income_tax | decimal(14,2) | state withholding |
+| state_income_tax | decimal(14,2) | total state withholding |
+| work_state_income_tax | decimal(14,2) | nonresident/work-state withholding |
+| resident_state_income_tax | decimal(14,2) | resident-state withholding after credit offset |
+| resident_state_credit_offset | decimal(14,2) | credit used to reduce resident-state liability |
 | local_income_tax | decimal(14,2) | local withholding |
 | employee_tax_total | decimal(14,2) | total employee taxes |
 | employer_social_security_tax | decimal(14,2) | employer FICA OASDI |
 | employer_medicare_tax | decimal(14,2) | employer Medicare |
 | employer_futa_tax | decimal(14,2) | FUTA |
 | employer_state_unemployment_tax | decimal(14,2) | SUTA |
+| social_security_taxable_wages | decimal(14,2) | current-period wages subject to SS after YTD cap |
+| federal_unemployment_taxable_wages | decimal(14,2) | current-period wages subject to FUTA after YTD cap |
+| state_unemployment_taxable_wages | decimal(14,2) | current-period wages subject to SUTA after YTD cap |
 | state_jurisdiction_code | varchar(32) | applied state rule |
 | local_jurisdiction_code | varchar(32) | applied local rule |
+| resident_state_jurisdiction_code | varchar(32) | resident/home state used for resident withholding |
 | net_pay | decimal(14,2) | employee take-home pay |
+| created_at / updated_at | timestamptz | audit timestamps |
+
+### payroll_run_item_allocations
+
+Per-work-location allocation tracking for multi-state payroll.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | bigint | PK |
+| payroll_run_item_id | bigint | FK -> payroll_run_items |
+| state_jurisdiction_code | varchar(32) | work-state jurisdiction for this allocation |
+| local_jurisdiction_code | varchar(32) | optional local jurisdiction |
+| allocation_percentage | decimal(8,4) | work-location share of the period wages |
+| allocated_gross_wages | decimal(14,2) | gross wages mapped to the location |
+| allocated_taxable_wages | decimal(14,2) | taxable wages mapped to the location |
+| work_state_income_tax | decimal(14,2) | withholding for the work state on this allocation |
+| local_income_tax | decimal(14,2) | local withholding for the location |
+| state_unemployment_taxable_wages | decimal(14,2) | SUTA-subject wages for the location after YTD cap |
+| employer_state_unemployment_tax | decimal(14,2) | employer SUTA for the location |
+| resident_state_credit_applied | decimal(14,2) | resident-state credit offset sourced from this work-state allocation |
+| reciprocity_applied | boolean | whether a reciprocity agreement suppressed work-state withholding |
 | created_at / updated_at | timestamptz | audit timestamps |
 
 ## Tax rule model
@@ -362,6 +393,43 @@ Unique key:
 
 - `(tax_jurisdiction_id, tax_year, tax_type)`
 
+### state_reciprocity_agreements
+
+Defines resident/work-state reciprocity pairs checked before nonresident work-state withholding is applied.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | bigint | PK |
+| resident_state_code | varchar(8) | employee residence/home state |
+| work_state_code | varchar(8) | state where wages are earned |
+| active | boolean | active flag |
+| notes | varchar(240) | reciprocity note |
+| created_at / updated_at | timestamptz | audit timestamps |
+
+Unique key:
+
+- `(resident_state_code, work_state_code)`
+
+### employee_tax_accumulators
+
+Stores YTD wages and tax amounts per employee, tax year, tax code, and jurisdiction.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | bigint | PK |
+| employee_id | bigint | FK -> employees |
+| tax_year | integer | tax year |
+| tax_code | varchar(48) | `FEDERAL_INCOME_TAX`, `SOCIAL_SECURITY`, `MEDICARE`, `ADDITIONAL_MEDICARE`, `FUTA`, `STATE_WITHHOLDING`, `LOCAL_WITHHOLDING`, `STATE_UNEMPLOYMENT` |
+| jurisdiction_code | varchar(32) | `US`, state code, or local code |
+| ytd_taxable_wages | decimal(14,2) | wages accumulated for the tax code |
+| ytd_employee_tax_amount | decimal(14,2) | employee withholding accumulated |
+| ytd_employer_tax_amount | decimal(14,2) | employer liability accumulated |
+| created_at / updated_at | timestamptz | audit timestamps |
+
+Unique key:
+
+- `(employee_id, tax_year, tax_code, jurisdiction_code)`
+
 ## Filing orchestration and records
 
 ### tax_filing_records
@@ -410,5 +478,9 @@ Tracks workflow launches for automated tax filing orchestration.
 
 - The implementation seeds **all 50 US states** in `tax_jurisdictions`.
 - It also seeds sample **local jurisdictions** and supports additional local rows through the same data model.
+- Multi-state employees can allocate wages across multiple work states within a payroll period.
+- Reciprocity agreements are checked before nonresident work-state withholding.
+- When reciprocity does not apply, resident-state withholding is reduced by a credit offset for work-state withholding to reduce double taxation.
+- YTD accumulators are used before applying wage-base-limited taxes such as Social Security, FUTA, and state unemployment.
 - Federal withholding remains data-driven through `tax_year_profiles` and `federal_tax_brackets`.
 - Payroll writes, filing generation, idempotency records, and webhook outbox entries are designed to occur within transactional service boundaries.

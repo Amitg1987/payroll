@@ -67,6 +67,18 @@ POST /api/v1/payroll/calculate
 GET  /api/v1/reports/payroll-summary?organizationId=1&taxYear=2026
 ```
 
+Both payroll processing and ad hoc calculations accept optional
+`workLocationAllocations` so multi-state wages can be split across work states
+before state/local withholding is calculated.
+
+Multi-state logic currently applies these rules:
+
+- work-state withholding on wages earned in that state
+- resident-state withholding on all income for taxing resident states
+- reciprocity checked first
+- resident-state credit offsets when reciprocity does not apply
+- persisted allocation tracking per work location
+
 ### Tax rules, filings, and workflows
 
 ```http
@@ -108,6 +120,10 @@ This is especially useful for:
 - API client issuance
 - webhook creation
 
+Multi-state payroll requests should always use idempotency keys when they are
+submitted from partner platforms, because allocation payloads often originate
+from external time or workforce systems.
+
 ## 5. Webhooks
 
 Webhook endpoints are tenant-scoped and may also be associated with a partner API client.
@@ -119,6 +135,9 @@ The platform signs outbound payloads with HMAC SHA-256 and sends:
 - `X-Webhook-Signature`
 
 Current event examples include payroll run and tax filing workflow activity.
+
+Because payroll writes are transactional, webhook events are only enqueued after
+the associated payroll or filing records are successfully persisted.
 
 ## 6. Temporal-backed filings
 

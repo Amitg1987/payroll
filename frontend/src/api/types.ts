@@ -134,14 +134,22 @@ export interface PayrollLineItem {
   medicareEmployeeTax: number
   additionalMedicareEmployeeTax: number
   stateIncomeTax: number
+  workStateIncomeTax: number
+  residentStateIncomeTax: number
+  residentStateCreditOffset: number
   localIncomeTax: number
   employeeTaxTotal: number
   employerSocialSecurityTax: number
   employerMedicareTax: number
   employerFutaTax: number
   employerStateUnemploymentTax: number
+  socialSecurityTaxableWages: number
+  federalUnemploymentTaxableWages: number
+  stateUnemploymentTaxableWages: number
   stateJurisdictionCode: string | null
   localJurisdictionCode: string | null
+  residentStateJurisdictionCode: string | null
+  allocations: WorkLocationAllocation[]
   netPay: number
 }
 
@@ -175,12 +183,20 @@ export interface PayrollCalculationResult {
   medicareEmployeeTax: number
   additionalMedicareEmployeeTax: number
   stateIncomeTax: number
+  workStateIncomeTax: number
+  residentStateIncomeTax: number
+  residentStateCreditOffset: number
   localIncomeTax: number
   employeeTaxTotal: number
   employerSocialSecurityTax: number
   employerMedicareTax: number
   employerFutaTax: number
   employerStateUnemploymentTax: number
+  socialSecurityTaxableWages: number
+  federalUnemploymentTaxableWages: number
+  stateUnemploymentTaxableWages: number
+  residentStateJurisdictionCode: string | null
+  allocations: WorkLocationAllocation[]
   netPay: number
 }
 
@@ -267,6 +283,7 @@ export interface PayrollCalculationRequest {
   bonusPay: number
   overtimeHours: number
   preTaxDeductions: number
+  workLocationAllocations?: WorkLocationAllocationRequest[]
 }
 
 export interface GenerateFilingRequest {
@@ -276,6 +293,26 @@ export interface GenerateFilingRequest {
   filingPeriod: string
   filingJurisdictionCode?: string | null
   dueDate?: string
+}
+
+export interface WorkLocationAllocationRequest {
+  stateJurisdictionCode: string
+  localJurisdictionCode?: string | null
+  allocationPercentage: number
+}
+
+export interface WorkLocationAllocation {
+  stateJurisdictionCode: string
+  localJurisdictionCode: string | null
+  allocationPercentage: number
+  allocatedGrossWages: number
+  allocatedTaxableWages: number
+  workStateIncomeTax: number
+  localIncomeTax: number
+  stateUnemploymentTaxableWages: number
+  employerStateUnemploymentTax: number
+  residentStateCreditApplied: number
+  reciprocityApplied: boolean
 }
 
 export interface OrganizationJurisdiction {
