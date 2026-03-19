@@ -4,8 +4,6 @@ import com.embeddedpayroll.backend.model.IdempotencyRecord;
 import com.embeddedpayroll.backend.model.Organization;
 import com.embeddedpayroll.backend.repository.IdempotencyRecordRepository;
 import com.embeddedpayroll.backend.repository.OrganizationRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -14,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
@@ -63,7 +62,7 @@ public class IdempotencyService {
         }
         try {
             return objectMapper.readValue(existing.getResponseBody(), responseType);
-        } catch (JsonProcessingException exception) {
+        } catch (Exception exception) {
             throw new IllegalStateException("Unable to replay stored idempotent response", exception);
         }
     }
@@ -93,7 +92,7 @@ public class IdempotencyService {
             record.setResponseBody(objectMapper.writeValueAsString(response));
             idempotencyRecordRepository.save(record);
             return response;
-        } catch (JsonProcessingException exception) {
+        } catch (Exception exception) {
             throw new IllegalStateException("Unable to persist idempotent response", exception);
         }
     }
@@ -109,7 +108,9 @@ public class IdempotencyService {
                 builder.append(String.format("%02x", value));
             }
             return builder.toString();
-        } catch (NoSuchAlgorithmException | JsonProcessingException exception) {
+        } catch (NoSuchAlgorithmException | RuntimeException exception) {
+            throw new IllegalStateException("Unable to hash idempotent request", exception);
+        } catch (Exception exception) {
             throw new IllegalStateException("Unable to hash idempotent request", exception);
         }
     }

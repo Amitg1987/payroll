@@ -4,8 +4,6 @@ import com.embeddedpayroll.backend.model.WebhookDelivery;
 import com.embeddedpayroll.backend.model.WebhookEndpoint;
 import com.embeddedpayroll.backend.repository.WebhookDeliveryRepository;
 import com.embeddedpayroll.backend.repository.WebhookEndpointRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -20,6 +18,7 @@ import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
@@ -134,7 +133,7 @@ public class WebhookService {
     private String writePayload(Object payload) {
         try {
             return objectMapper.writeValueAsString(payload);
-        } catch (JsonProcessingException exception) {
+        } catch (Exception exception) {
             throw new IllegalStateException("Unable to serialize webhook payload", exception);
         }
     }
