@@ -13,6 +13,8 @@ import type {
   TaxYearProfile,
 } from './types'
 
+const API_BASE_PATH = '/api/v1'
+
 function authHeader({ username, password }: ConnectionSettings): string {
   return `Basic ${btoa(`${username}:${password}`)}`
 }
@@ -50,41 +52,54 @@ async function request<T>(
 
 export const payrollApi = {
   currentUser: (settings: ConnectionSettings) =>
-    request<CurrentUser>(settings, '/api/security/me'),
+    request<CurrentUser>(settings, `${API_BASE_PATH}/security/me`),
 
   dashboard: (settings: ConnectionSettings, organizationId: number) =>
     request<DashboardSummary>(
       settings,
-      `/api/dashboard/summary?organizationId=${organizationId}`,
+      `${API_BASE_PATH}/dashboard/summary?organizationId=${organizationId}`,
     ),
 
   employees: (settings: ConnectionSettings, organizationId: number) =>
-    request<Employee[]>(settings, `/api/employees?organizationId=${organizationId}`),
+    request<Employee[]>(
+      settings,
+      `${API_BASE_PATH}/employees?organizationId=${organizationId}`,
+    ),
 
   createEmployee: (settings: ConnectionSettings, payload: CreateEmployeeRequest) =>
-    request<Employee>(settings, '/api/employees', {
+    request<Employee>(settings, `${API_BASE_PATH}/employees`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
 
   schedules: (settings: ConnectionSettings, organizationId: number) =>
-    request<PayrollSchedule[]>(settings, `/api/schedules?organizationId=${organizationId}`),
+    request<PayrollSchedule[]>(
+      settings,
+      `${API_BASE_PATH}/schedules?organizationId=${organizationId}`,
+    ),
 
   processSchedule: (
     settings: ConnectionSettings,
     scheduleId: number,
     payload: Record<string, unknown> = {},
   ) =>
-    request<PayrollRun>(settings, `/api/schedules/${scheduleId}/process`, {
+    request<PayrollRun>(
+      settings,
+      `${API_BASE_PATH}/schedules/${scheduleId}/process`,
+      {
       method: 'POST',
       body: JSON.stringify(payload),
-    }),
+      },
+    ),
 
   payrollRuns: (settings: ConnectionSettings, organizationId: number) =>
-    request<PayrollRun[]>(settings, `/api/payroll-runs?organizationId=${organizationId}`),
+    request<PayrollRun[]>(
+      settings,
+      `${API_BASE_PATH}/payroll-runs?organizationId=${organizationId}`,
+    ),
 
   approvePayrollRun: (settings: ConnectionSettings, runId: number) =>
-    request<PayrollRun>(settings, `/api/payroll-runs/${runId}/approve`, {
+    request<PayrollRun>(settings, `${API_BASE_PATH}/payroll-runs/${runId}/approve`, {
       method: 'POST',
     }),
 
@@ -92,22 +107,22 @@ export const payrollApi = {
     settings: ConnectionSettings,
     payload: PayrollCalculationRequest,
   ) =>
-    request<PayrollCalculationResult>(settings, '/api/payroll/calculate', {
+    request<PayrollCalculationResult>(settings, `${API_BASE_PATH}/payroll/calculate`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
 
   taxYears: (settings: ConnectionSettings) =>
-    request<TaxYearProfile[]>(settings, '/api/tax/years'),
+    request<TaxYearProfile[]>(settings, `${API_BASE_PATH}/tax/years`),
 
   filings: (settings: ConnectionSettings, organizationId: number, taxYear: number) =>
     request<TaxFilingRecord[]>(
       settings,
-      `/api/tax/filings?organizationId=${organizationId}&taxYear=${taxYear}`,
+      `${API_BASE_PATH}/tax/filings?organizationId=${organizationId}&taxYear=${taxYear}`,
     ),
 
   generateFiling: (settings: ConnectionSettings, payload: GenerateFilingRequest) =>
-    request<TaxFilingRecord>(settings, '/api/tax/filings/generate', {
+    request<TaxFilingRecord>(settings, `${API_BASE_PATH}/tax/filings/generate`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

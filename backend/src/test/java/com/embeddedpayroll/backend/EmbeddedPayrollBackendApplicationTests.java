@@ -8,11 +8,13 @@ import com.embeddedpayroll.backend.service.PayrollService;
 import com.embeddedpayroll.backend.service.TaxEngineService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class EmbeddedPayrollBackendApplicationTests {
 
 	@Autowired
@@ -26,6 +28,9 @@ class EmbeddedPayrollBackendApplicationTests {
 
 	@Autowired
 	private TaxEngineService taxEngineService;
+
+	@Autowired
+	private TestRestTemplate restTemplate;
 
 	@Test
 	void contextLoads() {
@@ -56,6 +61,24 @@ class EmbeddedPayrollBackendApplicationTests {
 		assertThat(calculation.grossPay()).isPositive();
 		assertThat(calculation.netPay()).isPositive();
 		assertThat(calculation.netPay()).isLessThan(calculation.grossPay());
+	}
+
+	@Test
+	void partnerVersionedEmployeeEndpointIsAvailable() {
+		Employee employee = employeeRepository.findByEmployeeNumber("EMP-1001").orElseThrow();
+		var response = restTemplate.withBasicAuth("admin", "Admin@123")
+			.getForEntity("/api/v1/employees?organizationId=" + employee.getOrganization().getId(), String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).contains("EMP-1001");
+	}
+
+	@Test
+	void partnerOpenApiGroupIsPublished() {
+		var response = restTemplate.getForEntity("/v3/api-docs/partner-v1", String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).contains("/api/v1/employees");
 	}
 
 }

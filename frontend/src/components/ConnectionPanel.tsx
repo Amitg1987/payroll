@@ -51,7 +51,8 @@ export function ConnectionPanel({
           {loading ? 'Connecting...' : 'Connect / Refresh'}
         </button>
         <p className="muted">
-          Demo users: admin / Admin@123, accountant / Accountant@123, approver / Approver@123
+          Demo users: admin / Admin@123, accountant / Accountant@123, approver / Approver@123.
+          Partner docs are available at /swagger-ui.html on the backend host.
         </p>
       </div>
     </div>

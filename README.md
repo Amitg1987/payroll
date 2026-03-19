@@ -43,9 +43,15 @@ The project includes:
 ### Embedded integration model
 
 - Backend exposes REST APIs for partner platform integration.
+- New partner-facing integrations should use the versioned surface at **`/api/v1/*`**.
+- Legacy **`/api/*`** routes remain available for backward compatibility.
 - Frontend includes reusable components in:
   - `frontend/src/components/index.ts`
 - Components can be consumed by another React application or adapted into a library/distribution pipeline.
+- OpenAPI/Swagger documentation is available at:
+  - `/swagger-ui.html`
+  - `/v3/api-docs`
+  - `/v3/api-docs/partner-v1`
 
 ## 2. Repository structure
 
@@ -89,18 +95,20 @@ The project includes:
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/api/security/me` | GET | Current authenticated user |
-| `/api/dashboard/summary` | GET | Dashboard metrics for an organization |
-| `/api/employees` | GET/POST | List or create employees |
-| `/api/employees/{id}/w4` | PUT | Upsert W-4 profile |
-| `/api/schedules` | GET/POST | List or create payroll schedules |
-| `/api/schedules/{id}/process` | POST | Process a scheduled payroll |
-| `/api/payroll-runs` | GET | List payroll runs and line items |
-| `/api/payroll-runs/{id}/approve` | POST | Approve a payroll run |
-| `/api/payroll/calculate` | POST | Ad hoc gross-to-net calculation |
-| `/api/tax/years` | GET | Historical tax year support and bracket tables |
-| `/api/tax/filings` | GET | List filing records |
-| `/api/tax/filings/generate` | POST | Generate filing summary records |
+| `/api/v1/security/me` | GET | Current authenticated user |
+| `/api/v1/dashboard/summary` | GET | Dashboard metrics for an organization |
+| `/api/v1/employees` | GET/POST | List or create employees |
+| `/api/v1/employees/{id}/w4` | PUT | Upsert W-4 profile |
+| `/api/v1/schedules` | GET/POST | List or create payroll schedules |
+| `/api/v1/schedules/{id}/process` | POST | Process a scheduled payroll |
+| `/api/v1/payroll-runs` | GET | List payroll runs and line items |
+| `/api/v1/payroll-runs/{id}/approve` | POST | Approve a payroll run |
+| `/api/v1/payroll/calculate` | POST | Ad hoc gross-to-net calculation |
+| `/api/v1/tax/years` | GET | Historical tax year support and bracket tables |
+| `/api/v1/tax/filings` | GET | List filing records |
+| `/api/v1/tax/filings/generate` | POST | Generate filing summary records |
+
+Legacy `/api/*` paths are still supported to avoid breaking existing consumers.
 
 ### Demo users
 
@@ -137,6 +145,7 @@ frontend/src/components/index.ts
 See:
 
 - [`docs/schema.md`](docs/schema.md)
+- [`docs/partner-integration.md`](docs/partner-integration.md)
 
 This document explains the normalized data model, relationships, and tax-year versioning approach.
 
@@ -162,6 +171,14 @@ Backend default URL:
 http://localhost:8080
 ```
 
+Swagger/OpenAPI:
+
+```text
+http://localhost:8080/swagger-ui.html
+http://localhost:8080/v3/api-docs
+http://localhost:8080/v3/api-docs/partner-v1
+```
+
 ### Frontend
 
 ```bash
@@ -177,6 +194,7 @@ http://localhost:5173
 ```
 
 The frontend is preconfigured to connect to `http://localhost:8080` by default, but the connection panel lets you point the UI at any compatible backend deployment.
+The frontend client uses the versioned partner API paths under `/api/v1/*`.
 
 ## 7. How to build production artifacts
 

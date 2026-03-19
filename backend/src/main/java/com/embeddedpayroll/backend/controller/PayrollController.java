@@ -1,5 +1,6 @@
 package com.embeddedpayroll.backend.controller;
 
+import com.embeddedpayroll.backend.config.ApiRoutes;
 import com.embeddedpayroll.backend.dto.PayrollDtos;
 import com.embeddedpayroll.backend.service.PayrollService;
 import com.embeddedpayroll.backend.service.TaxEngineService;
@@ -17,7 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping({
+    ApiRoutes.LEGACY_API_PREFIX,
+    ApiRoutes.PARTNER_API_PREFIX
+})
 @RequiredArgsConstructor
 public class PayrollController {
 

@@ -1,5 +1,6 @@
 package com.embeddedpayroll.backend.controller;
 
+import com.embeddedpayroll.backend.config.ApiRoutes;
 import com.embeddedpayroll.backend.dto.TaxDtos;
 import com.embeddedpayroll.backend.service.TaxService;
 import jakarta.validation.Valid;
@@ -14,7 +15,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/tax")
+@RequestMapping({
+    ApiRoutes.LEGACY_API_PREFIX + "/tax",
+    ApiRoutes.PARTNER_API_PREFIX + "/tax"
+})
 @RequiredArgsConstructor
 public class TaxController {
 

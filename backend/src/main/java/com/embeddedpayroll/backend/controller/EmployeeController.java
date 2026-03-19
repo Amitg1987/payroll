@@ -1,5 +1,6 @@
 package com.embeddedpayroll.backend.controller;
 
+import com.embeddedpayroll.backend.config.ApiRoutes;
 import com.embeddedpayroll.backend.dto.EmployeeDtos;
 import com.embeddedpayroll.backend.service.PayrollService;
 import jakarta.validation.Valid;
@@ -17,7 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/employees")
+@RequestMapping({
+    ApiRoutes.LEGACY_API_PREFIX + "/employees",
+    ApiRoutes.PARTNER_API_PREFIX + "/employees"
+})
 @RequiredArgsConstructor
 public class EmployeeController {
 

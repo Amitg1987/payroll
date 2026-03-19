@@ -1,5 +1,6 @@
 package com.embeddedpayroll.backend.controller;
 
+import com.embeddedpayroll.backend.config.ApiRoutes;
 import com.embeddedpayroll.backend.dto.DashboardDtos;
 import com.embeddedpayroll.backend.model.PayrollRun;
 import com.embeddedpayroll.backend.model.TaxFilingRecord;
@@ -18,7 +19,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/dashboard")
+@RequestMapping({
+    ApiRoutes.LEGACY_API_PREFIX + "/dashboard",
+    ApiRoutes.PARTNER_API_PREFIX + "/dashboard"
+})
 @RequiredArgsConstructor
 public class DashboardController {
 

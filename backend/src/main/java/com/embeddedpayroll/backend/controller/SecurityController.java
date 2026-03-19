@@ -1,5 +1,6 @@
 package com.embeddedpayroll.backend.controller;
 
+import com.embeddedpayroll.backend.config.ApiRoutes;
 import com.embeddedpayroll.backend.dto.SecurityDtos;
 import com.embeddedpayroll.backend.repository.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
@@ -10,7 +11,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/security")
+@RequestMapping({
+    ApiRoutes.LEGACY_API_PREFIX + "/security",
+    ApiRoutes.PARTNER_API_PREFIX + "/security"
+})
 @RequiredArgsConstructor
 public class SecurityController {
 
